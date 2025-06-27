@@ -23,7 +23,7 @@
             "tsoil-28":"K",
             "tsoil-100":"K",
             "tsoil-289":"K",
-            "tskin":"K"
+            "tskin":"K",
             "lai-low":"m^2/m^2",
             "lai-high":"m^2/m^2",
             "pres":"Pa",
@@ -43,7 +43,7 @@
             "lwnet":"J/m^2",
             "falb":"ratio"
         }
-    }
+    },
     "label-mapping":{
         "swvl1":"vsm-07",
         "swvl2":"vsm-28",
@@ -55,9 +55,9 @@
         "stl4":"tsoil-289",
         "skt":"tskin",
         "lai_lv":"lai-low",
-        "var66":"lai-low"
+        "var66":"lai-low",
         "lai_hv":"lai-high",
-        "var67":"lai-high"
+        "var67":"lai-high",
         "sp":"pres",
         "sd":"weasd",
         "u10":"ugrd",
@@ -70,41 +70,53 @@
         "e":"evp",
         "pev":"pevap",
         "var251":"pevap",
-        "sshf":"shtfl"
-        "slhf":"lhtfl"
+        "sshf":"shtfl",
+        "slhf":"lhtfl",
         "ssr":"swnet",
         "str":"lwnet",
         "falb":"falb"
-    }
+    },
     "vegtypes":{
-        1:"crops",
-        2:"grass",
-        3:"evergreen-needleleaf",
-        4:"deciduous-needleleaf",
-        5:"deciduous-broadleaf",
-        6:"evergreen-broadleaf",
-        7:"tall-grass",
-        8:"desert",
-        9:"tundra",
-        10:"crops-irrigated",
-        11:"semidesert",
-        12:"glacier",
-        13:"bog-marsh",
-        14:"inland-water",
-        15:"ocean",
-        16:"evergreen-shrub",
-        17:"deciduous-shrub",
-        18:"mixed-forest",
-        19:"interrupted-forest",
-        20:"water-land"
-    }
+        "1":"crops",
+        "2":"grass",
+        "3":"evergreen-needleleaf",
+        "4":"deciduous-needleleaf",
+        "5":"deciduous-broadleaf",
+        "6":"evergreen-broadleaf",
+        "7":"tall-grass",
+        "8":"desert",
+        "9":"tundra",
+        "10":"crops-irrigated",
+        "11":"semidesert",
+        "12":"glacier",
+        "13":"bog-marsh",
+        "14":"inland-water",
+        "15":"ocean",
+        "16":"evergreen-shrub",
+        "17":"deciduous-shrub",
+        "18":"mixed-forest",
+        "19":"interrupted-forest",
+        "20":"water-land"
+    },
     "soiltypes":{
-        1:"coarse",
-        2:"medium",
-        3:"medium-fine",
-        4:"fine",
-        5:"very-fine",
-        6:"organic",
-        7:"tropical-organic"
+        "1":"coarse",
+        "2":"medium",
+        "3":"medium-fine",
+        "4":"fine",
+        "5":"very-fine",
+        "6":"organic",
+        "7":"tropical-organic"
+    },
+    "desc-mapping":{
+        "vt-low":"low vegetation type",
+        "vt-high":"high vegetation type",
+        "soilt":"soil type",
+        "vc-low":"low vegetation cover",
+        "vc-high":"high vegetation cover",
+        "laked":"lake depth",
+        "geopot":"surface geopotential height",
+        "lakec":"lake cover",
+        "glacmask":"glacier mask",
+        "landmask":"land-sea mask"
     }
 }

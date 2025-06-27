@@ -4,16 +4,16 @@ import pickle as pkl
 from pathlib import Path
 
 label_mapping = {
-        "tvl":("vt-low", "low vegetation type"),
-        "tvh":("vt-high", "high vegetation type"),
-        "slt":("soilt", "soil type"),
-        "cvl":("vc-low", "low vegetation cover"),
-        "cvh":("vc-high", "high vegetation cover"),
-        "dl":("laked", "lake depth"),
-        "z":("geopot", "surface geopotential height"),
-        "cl":("lakec", "lake cover"),
-        "si10":("glacmask", "glacier mask"),
-        "lsm":("landmask", "land-sea mask"),
+        "tvl":"vt-low",
+        "tvh":"vt-high",
+        "slt":"soilt",
+        "cvl":"vc-low",
+        "cvh":"vc-high",
+        "dl":"laked",
+        "z":"geopot",
+        "cl":"lakec",
+        "si10":"glacmask",
+        "lsm":"landmask",
         }
 
 int_types = ["slt", "tvl", "tvh"]
@@ -52,11 +52,9 @@ if __name__=="__main__":
             lat = np.stack([lat1d for i in range(lon1d.size)], axis=1)
             lon = np.stack([lon1d for i in range(lat1d.size)], axis=0)
             sdata.append(lat[*sub_slice])
-            slabels.append(("lat", "latitude"))
-            print(sdata[-1])
+            slabels.append("lat")
             sdata.append(lon[*sub_slice])
-            slabels.append(("lon", "longitude"))
-            print(sdata[-1])
+            slabels.append("lon")
             got_coords = True
         unq_label = [l for l in d.variables.keys() if l not in base_labels][0]
         tmp_data = d[unq_label][...][0] ## drop superfluous first dim
@@ -66,9 +64,8 @@ if __name__=="__main__":
         slabels.append(label_mapping[unq_label])
         d.close()
 
-    slabels,sdesc = zip(*slabels)
     #sdata = np.stack(sdata, axis=-1)
-    for l,d,x in zip(slabels,sdesc,sdata):
-        print(x.shape, f"{l:<10} {d:<20}")
+    for l,x in zip(slabels,sdata):
+        print(x.shape, f"{l:<10}")
     pkl_path = static_data_dir.joinpath("era5_static.pkl")
-    pkl.dump(((slabels,sdesc),sdata), pkl_path.open("wb"))
+    pkl.dump((slabels,sdata), pkl_path.open("wb"))

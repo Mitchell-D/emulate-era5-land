@@ -9,7 +9,7 @@
 #SBATCH -p shared
 
 ### TOTAL processors (number of tasks)
-#SBATCH --ntasks 16
+#SBATCH --ntasks 13
 ###SBATCH --ntasks 1
 
 ### total run time estimate (D-HH:MM)
@@ -28,8 +28,10 @@
 ###SBATCH --open-mode=append ### Don't overwrite existing files
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_static.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_static.err # STDERR
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_test.out # STDOUT
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_test.err # STDERR
+###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_test.out # STDOUT
+###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_test.err # STDERR
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.out # STDOUT
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.err # STDERR
 
 cd /rhome/mdodson/emulate-era5-land
 
