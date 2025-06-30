@@ -1,0 +1,36 @@
+#!/bin/csh
+### SLURM batch script
+
+### Email address
+#SBATCH --mail-user=mtd0012@uah.edu
+
+### queue type
+#SBATCH -p standard
+
+### TOTAL processors (number of tasks)
+#SBATCH --ntasks 2
+####SBATCH --ntasks 1
+
+### total run time estimate (D-HH:MM)
+#SBATCH -t 5-00:00
+
+### memory (MB per CPU)
+###SBATCH --mem-per-cpu=4G
+#SBATCH --mem-per-cpu=24G
+###SBATCH --mem-per-cpu=48G
+
+### Mail to user on job done and fail
+#SBATCH --mail-type=END,FAIL
+
+### Job name
+#SBATCH -J gen-test
+
+###SBATCH --open-mode=append ## Don't overwrite existing files
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_generator-test.out
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_generator-test.err
+
+cd /rhome/mdodson/emulate-era5-land
+
+## Run code
+set runcmd = /rhome/mdodson/.micromamba/envs/learn3/bin/python
+${runcmd} -u scripts/test_generators.py

@@ -72,7 +72,8 @@ def _gen_era5_rad_daily(file_path:Path):
 def _gen_era5_wbgt_daily(file_path:Path):
     """ """
     d = nc.Dataset(file_path, "r")
-    labels = ["d2m","t2m","ssrd","u10","v10","sp"]
+    ## ignoring ssrd because it is redundant with the rad files
+    labels = ["d2m","t2m","u10","v10","sp"]
     num_times = d.variables["valid_time"].size
     assert num_times % 24 == 0
     for i in range(num_times // 24):
@@ -87,16 +88,16 @@ def mp_extract_era5_year(args):
     return extract_era5_year(**args)
 
 def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
-        chunk_shape, label_mapping={}, debug=False):
+        chunk_shape, label_mapping={}, m_valid=None, debug=False):
     """
     Extracts a full year of era5 data from monthly series of files including
     "rad" "snveg" and "soil" grib1 files and "wbgt" netCDFs, which are yielded
     by the day by _get_era5_snveg_daily, _gen_era5_rad_daily,
     _gen_era5_soil_daily, and _gen_era5_wbgt_daily.
 
-    :@param file_dict: Dict mapping integer months [1,12] to a list of files
-        like "era5land_{data_category}_vars_{YYYYmm}.{grib | nc}" where
-        data_category is one of (rad, snveg, soil, wbgt)
+    :@param file_dict: Dict mapping integer months [1,12] to a dict of files
+        identified by their data category, one of: (rad, snveg, soil, wbgt)
+        like "era5land_{data_category}_vars_{YYYYmm}.{grib | nc}"
     :@param out_h5_path: Path to the full-year hdf5 file created by this method
     :@param static_array: array of separately-extracted time-invariant values
         to be stored alongside the dynamic and time coordinate arrays.
@@ -114,8 +115,8 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
     cur_h5_ix = 0
     for mix in range(1,13):
         ## declare generators for this month
-        gens = [extract_methods[fp.stem.split("_")[1]](fp)
-                for fp in file_dict[mix]]
+        gens = [extract_methods[vk](file_dict[mix][vk])
+                for vk in ["wbgt", "snveg", "rad", "soil"]]
         labels = []
         got_labels = False
         ## cycles once per day
@@ -132,7 +133,9 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                         tmp_array,tmp_times = tmp_array
                     if not got_labels:
                         labels += tmp_labels
-                    arrays.append(tmp_array)
+                    if m_valid is None:
+                        m_valid = np.full(tmp_array.shape[1:3], True)
+                    arrays.append(tmp_array[:,m_valid])
                 got_labels = True
             except StopIteration:
                 break
@@ -147,12 +150,19 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                         chunks=chunk_shape,
                         compression="gzip",
                         )
+                static_array = static_array[m_valid]
                 S = H5F.create_dataset(
                         name="/data/static",
                         shape=static_array.shape,
                         maxshape=static_array.shape,
                         )
                 S[...] = static_array
+                M = H5F.create_dataset(
+                        name="/data/mask",
+                        shape=m_valid.shape,
+                        maxshape=m_valid.shape,
+                        )
+                M[...] = m_valid
                 T = H5F.create_dataset(
                         name="/data/time",
                         shape=(0,),
@@ -207,7 +217,7 @@ if __name__=="__main__":
     base_h5_path = "timegrid_era5_{year}.h5"
 
     slabels,sdata = pkl.load(static_pkl.open("rb"))
-    m_valid = sdata[slabels.index("landmask")] > .85
+    m_valid = sdata[slabels.index("m_valid")].astype(bool)
     label_mapping = json.load(
             data_dir.joinpath("list_feats_era5.json").open("r")
             )["label-mapping"]
@@ -218,11 +228,12 @@ if __name__=="__main__":
     for dpath in era5_dirs:
         for fp in dpath.iterdir():
             ts = datetime.strptime(fp.stem.split("_")[-1], "%Y%m")
+            vt = fp.stem.split("_")[1]
             if ts.year not in extract_paths.keys():
                 extract_paths[ts.year] = {}
             if ts.month not in extract_paths[ts.year].keys():
-                extract_paths[ts.year][ts.month] = []
-            extract_paths[ts.year][ts.month].append(fp)
+                extract_paths[ts.year][ts.month] = {}
+            extract_paths[ts.year][ts.month][vt] = fp
 
     args = [{
         "file_dict":extract_paths[year],
@@ -232,7 +243,8 @@ if __name__=="__main__":
         "static_array":np.stack([
             x if type(x)==np.ndarray else x.data for x in sdata
             ], axis=-1),
-        "chunk_shape":(48,32,32,28),
+        "chunk_shape":(96,32,27),
+        "m_valid":m_valid,
         "label_mapping":label_mapping,
         "debug":True,
         } for year in extract_paths.keys()]
