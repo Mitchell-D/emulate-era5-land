@@ -1,9 +1,61 @@
 
+import torch
 import numpy as np
+import h5py
 from pathlib import Path
+from datetime import datetime
+import json
 
-from testbed import generators
-#from era5_testbed import
+#from testbed import generators
+from era5_testbed.helpers import get_permutation_pair
+
+class TimegridSequenceDataset(torch.utils.data.IterableDataset):
+    def __init__(self):
+        pass
+
+def _timegrid_spatial_permute(tg_path:Path, base_seed):
+    """
+    Permute the timegrid's static and dynamic arrays along the spatial axis
+    and rechunk accordingly
+    """
+    F = h5py.File(tg_path, "r+")
+    D = F["/data/dynamic"]
+    S = F["/data/static"]
+    T = list(map(lambda t:datetime.fromtimestamp(int(t)),F["/data/time"][...]))
+    seed_sum = base_seed + int(tg_path.stem.split("_")[-1])
+    forward,backward = get_permutation_pair(D.shape[1], seed_sum)
+    tchunks,_,_ = zip(*D.iter_chunks())
+    perms = np.stack([forward,backward], axis=-1)
+
+    print((np.arange(forward.size)-17)[forward][backward])
+    print((np.arange(forward.size)-17)[backward][forward])
+
+    if "permute" not in F["data"].keys():
+        prev_attrs = json.loads(F["data"].attrs["dynamic"])
+        prev_attrs.update({"clabels":("time","space")})
+        F["data"].attrs["dynamic"] = json.dumps(prev_attrs)
+        prev_attrs = json.loads(F["data"].attrs["static"])
+        prev_attrs.update({"clabels":("space",)})
+        F["data"].attrs["static"] = json.dumps(prev_attrs)
+        print(f"Updated dynamic and static attributes")
+
+        pshape = perms.shape
+        F.create_dataset("/data/permute", shape=pshape, maxshape=pshape)
+
+    F["/data/permute"][...] = perms
+    F["data"].attrs["permute"] = json.dumps({
+        "clabels":("space",),
+        "flabels":["forward", "backward"],
+        "seed":seed_sum,
+        })
+
+    tmps = S[...][forward]
+    for t in set(tchunks):
+        print(f"Permuting {T[t][0]} - {T[t][-1]}")
+        tmpd = D[t,...][:,forward]
+        D[t,...] = tmpd
+        #F.flush()
+    F.close()
 
 if __name__=="__main__":
 
@@ -14,7 +66,13 @@ if __name__=="__main__":
             if p.stem.split("_")[2] in map(str,range(2012,2018))
             ]
 
-    #'''
+    print(tg_paths[1])
+    _timegrid_spatial_permute(tg_paths[1], 200007221750)
+    tg_paths[1].rename(Path(
+        "/rstor/mdodson/era5/timegrids-new"
+        ).joinpath(tg_paths[0].name))
+
+    '''
     check_labels = ["dlwrf","dswrf","shtfl","lhtfl","swnet","lwnet","tmp"]
     gen = generators.timegrid_sequence_dataset(
             timegrid_paths=tg_paths,
@@ -60,4 +118,6 @@ if __name__=="__main__":
         if count > 10:
             break
         count += 1
-    #'''
+    '''
+
+    ## permute timegrids along axis

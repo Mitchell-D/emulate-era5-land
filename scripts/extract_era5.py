@@ -169,11 +169,11 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                         maxshape=(None,),
                         )
                 H5F["data"].attrs["dynamic"] = json.dumps({
-                    "clabels":("time", "lat", "lon"),
+                    "clabels":("time", "space"),
                     "flabels":[label_mapping.get(l, l) for l in labels],
                     })
                 H5F["data"].attrs["static"] = json.dumps({
-                    "clabels":("lat", "lon"),
+                    "clabels":("space",),
                     "flabels":[label_mapping.get(l, l) for l in static_labels],
                     })
             cur_slice = slice(cur_h5_ix, cur_h5_ix+arrays.shape[0])
