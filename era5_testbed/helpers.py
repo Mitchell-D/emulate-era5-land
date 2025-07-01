@@ -10,11 +10,10 @@ def get_permutation_pair(length, seed=None):
         ), key=lambda v:v[0])))[1])
     return perm,r_perm
 
-
 def get_permutation(coord_array, initial_perm=None, target_avg_dist=3,
         roll_threshold=.66, threshold_diminish=.01, recycle_count=2,
         dynamic_roll_threshold=False, max_iterations=None, seed=None,
-        debug=False):
+        return_stats=False, debug=False):
     """
     Method for iteratively discovering a semi-random permutation that
     balances preserving the approximate spatial locality of coordinates while
@@ -47,7 +46,12 @@ def get_permutation(coord_array, initial_perm=None, target_avg_dist=3,
         is typically much slower to converge.
     :@param max_iterations: Max iterations allowed to discover a permutation
     :@param seed: Random seed for initial permutation and reshuffling.
+    :@param return_stats: If True, a list of 2-tuples (mean_dist, stdev_dist)
+        corresponding to the permutation from each iteration is returned
     :@param debug: If True, prints mean and stdev of distance each iteration.
+
+    :@return: Array of the permutation, or 2-tuple (permutation, stats) if
+        return_stats is True
     """
     ## establish the random number generator and initial index permutation
     rng = np.random.default_rng(seed=seed)
@@ -58,6 +62,7 @@ def get_permutation(coord_array, initial_perm=None, target_avg_dist=3,
 
     init_avg_dist = None
     iter_count=0
+    stats = []
     while True:
         ## determine the euclidean distance in coordinate space of each
         ## point's destination from its origin given the current permutation
@@ -72,6 +77,8 @@ def get_permutation(coord_array, initial_perm=None, target_avg_dist=3,
         if debug:
             print(f"Distance Avg: {avg_dist:<6.3f} " + \
                 f"Stdev: {np.std(dsort_dist):<6.3f}")
+        if return_stats:
+            stats.append((avg_dist, np.std(dsort_dist)))
         if init_avg_dist is None:
             init_avg_dist = avg_dist
 
@@ -115,4 +122,7 @@ def get_permutation(coord_array, initial_perm=None, target_avg_dist=3,
             key=lambda d:d[0]
             ))
         tmp_perm = np.asarray(tmp_perm, dtype=int)
-    return tmp_perm
+    if return_stats:
+        return tmp_perm, stats
+    else:
+        return tmp_perm
