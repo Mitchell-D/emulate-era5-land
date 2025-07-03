@@ -32,6 +32,8 @@
 #SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_test.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.err # STDERR
+###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations.out # STDOUT
+###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations.err # STDERR
 
 cd /rhome/mdodson/emulate-era5-land
 
