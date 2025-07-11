@@ -2,6 +2,9 @@ import numpy as np
 from pathlib import Path
 
 def get_permutation_pair(length, seed=None):
+    """
+    Get a random permutation of the provided number of elements and its inverse
+    """
     rng = np.random.default_rng()
     perm = np.arange(length)
     rng.shuffle(perm)
@@ -124,5 +127,56 @@ def get_permutation(coord_array, initial_perm=None, target_avg_dist=3,
         tmp_perm = np.asarray(tmp_perm, dtype=int)
     if return_stats:
         return tmp_perm, stats
-    else:
-        return tmp_perm
+    return tmp_perm
+
+def get_permutation_conv(coord_array, dist_threshold, reperm_cap, shuffle_frac,
+        seed=None, return_stats=False, debug=False):
+    """
+    Alt method for generating a locality preserving semi-random permutation
+    """
+    rng = np.random.default_rng(seed)
+    jump_count = np.zeros(coord_array.shape[0])
+    ## index order wrt original array for mixing steps
+    conv_order = np.arange(coord_array.shape[0])
+    rng.shuffle(conv_order)
+
+    stats = []
+    ## start with identity permutation
+    cur_perm = np.arange(coord_array.shape[0])
+    for ix in conv_order:
+        ## unpermuted distances wrt chosen pixel and mix candidate mask
+        dists = (np.sum((coord_array-coord_array[ix])**2,axis=1))**(1/2)
+        m_mix = (dists < dist_threshold) & (jump_count <= reperm_cap)
+        num_mix = int(np.count_nonzero(m_mix)*shuffle_frac)
+        if not num_mix > 1:
+            continue
+        ## unpermuted indeces of permutation destinations to mix
+        ix_nomix = rng.choice(np.where(m_mix)[0], size=num_mix, replace=False)
+        ## shuffled permutation destinations
+        ix_mix = np.copy(ix_nomix)
+        rng.shuffle(ix_mix)
+
+        ## shuffle the selected mix indeces
+        cur_perm[ix_nomix] = cur_perm[ix_mix]
+        #jump_count[ix_nomix] += 1 ## disabled and modified at 171
+        ## carry over the number of jumps for this pixel from prev position
+        new_jump_count = np.copy(jump_count)
+        new_jump_count[ix_nomix] = jump_count[ix_mix] + 1
+        jump_count = new_jump_count
+
+        if debug:
+            tmpd = np.sum((coord_array-coord_array[cur_perm])**2, axis=1)**(.5)
+            print(f"Distance Avg: {np.average(tmpd):<6.3f} " + \
+                f"Stdev: {np.std(tmpd):<6.3f}")
+            if return_stats:
+                stats.append((np.average(tmpd), np.std(tmpd)))
+
+    if return_stats:
+        return cur_perm,stats
+    return cur_perm
+
+def mp_get_permutation(args):
+    return args,get_permutation(**args)
+
+def mp_get_permutation_conv(args):
+    return args,get_permutation_conv(**args)
