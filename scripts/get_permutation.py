@@ -178,7 +178,7 @@ def plot_multiy_lines(data, xaxis, plot_spec={},
 
 def plot_perm_pkl(perm_pkl:Path, coords:np.array, subgrids:dict,
         valid_mask:np.array, fig_dir:Path, chunk_size=64, plot_stats=False,
-        debug=False):
+        plot_sparse_chunks=True, num_sparse_chunks=50, seed=None, debug=False):
     """
     :@param perm_pkl:
     :@param coords:
@@ -188,6 +188,7 @@ def plot_perm_pkl(perm_pkl:Path, coords:np.array, subgrids:dict,
         corresponding to the locations of valid points
     :@param chunk_size: Hypothetical 1d chunk size used efficiency estimates
     :@param plot_stats:
+    :@param seed: seed for choosing
     :@param debug:
     """
     args,perm,stats = pkl.load(perm_pkl.open("rb"))
@@ -206,6 +207,8 @@ def plot_perm_pkl(perm_pkl:Path, coords:np.array, subgrids:dict,
     ll_perm = coords[perm[...,0]]
     ## (N,) latlon distances of permuted points from original location
     dists = np.sum((coords-ll_perm)**2, axis=1)**(1/2)
+    ## (N,2) indeces of valid points in unpermuted space
+    valid_idxs = np.argwhere(valid_mask)
 
     px_per_chunk = []
     for rlabel,((lat0,latf),(lon0,lonf)) in subgrids.items():
@@ -214,12 +217,10 @@ def plot_perm_pkl(perm_pkl:Path, coords:np.array, subgrids:dict,
                 (ll_perm[:,1] >= lon0) & (ll_perm[:,1] <= lonf)
         ## Number of unique contiguous chunks associated with the subset
         unq_chunks = np.unique(np.argwhere(in_subset)[:,0] // chunk_size)
-        if debug:
-            print(f"{rlabel} {unq_chunks.size = }")
+        #if debug:
+        #    print(f"{rlabel} {unq_chunks.size = }")
         px_per_chunk.append(np.count_nonzero(in_subset) / unq_chunks.size)
 
-        ## (N,2) indeces of valid points in unpermuted space
-        valid_idxs = np.argwhere(valid_mask)
         ## (N,) indeces of subset points in permuted space
         subset_idxs = np.argwhere(in_subset).T
 
@@ -245,6 +246,36 @@ def plot_perm_pkl(perm_pkl:Path, coords:np.array, subgrids:dict,
                 fig_path=fig_dir.joinpath(f"{perm_pkl.stem}_{rlabel}.png"),
                 show=False
                 )
+
+    if plot_sparse_chunks:
+        rng = np.random.default_rng(seed)
+        chunk_starts = np.arange(ll_perm.shape[0] // chunk_size) * chunk_size
+        rng.shuffle(chunk_starts)
+        ext_chunks = chunk_starts[:num_sparse_chunks]
+        in_subset = np.full(ll_perm.shape[0], False)
+        for cs in ext_chunks:
+            in_subset[cs:cs+chunk_size] = True
+        rgb = np.full(valid_mask.shape, 0)
+        rgb[valid_idxs[:,0], valid_idxs[:,1]] = 255
+        rgb = np.stack([rgb for i in range(3)], axis=-1)
+        sub_ixs_noperm = valid_idxs[perm[:,0]][in_subset]
+        sub_ixs_perm = valid_idxs[in_subset]
+        rgb[sub_ixs_noperm[:,0],sub_ixs_noperm[:,1]] = np.array([0,0,255])
+        rgb[sub_ixs_perm[:,0],sub_ixs_perm[:,1]] = np.array([255,0,0])
+        plot_geo_rgb(
+                rgb=rgb,
+                lat_range=(np.amin(coords[:,0]),np.amax(coords[:,0])),
+                lon_range=(np.amin(coords[:,1]),np.amax(coords[:,1])),
+                plot_spec={
+                    "border_color":"black",
+                    "border_linewidth":1,
+                    "title":f"{perm_pkl.stem} " + \
+                            f"({num_sparse_chunks} x {chunk_size})"
+                    },
+                fig_path=fig_dir.joinpath(f"{perm_pkl.stem}_chunked.png"),
+                show=False
+                )
+
     mean_px_per_chunk = np.average(px_per_chunk)
     print(f"{perm_pkl.stem}, {mean_px_per_chunk = :.4f}")
 
@@ -389,9 +420,12 @@ if __name__=="__main__":
                     fig_dir=fig_dir,
                     chunk_size=64,
                     plot_stats=True,
-                    debug=False,
+                    plot_sparse_chunks=True,
+                    num_sparse_chunks=50,
+                    seed=200007221750,
+                    debug=True,
                     )
         except Exception as e:
             print(f"Failed for {pf.name}")
-            print(e)
-            #raise e
+            #print(e)
+            raise e
