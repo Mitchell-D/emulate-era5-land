@@ -1,17 +1,15 @@
 import numpy as np
 from pathlib import Path
 
-def get_permutation_pair(length, seed=None):
+def get_permutation_inverse(perm:np.array):
     """
     Get a random permutation of the provided number of elements and its inverse
+
+    :@param perm: (N,) integer array mapping original positions to new indeces
     """
-    rng = np.random.default_rng()
-    perm = np.arange(length)
-    rng.shuffle(perm)
-    r_perm = np.asarray(tuple(zip(*sorted(zip(
+    return np.asarray(tuple(zip(*sorted(zip(
         list(perm), range(len(perm))
         ), key=lambda v:v[0])))[1])
-    return perm,r_perm
 
 def get_permutation(coord_array, initial_perm=None, target_avg_dist=3,
         roll_threshold=.66, threshold_diminish=.01, recycle_count=2,

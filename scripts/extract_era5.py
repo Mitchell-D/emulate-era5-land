@@ -17,6 +17,8 @@ import shlex
 from pathlib import Path
 from datetime import datetime
 
+from era5_testbed.helpers import get_permutation_inverse
+
 def _gen_era5_snveg_daily(file_path:Path):
     """ """
     gf = pygrib.open(file_path.as_posix())
@@ -88,7 +90,8 @@ def mp_extract_era5_year(args):
     return extract_era5_year(**args)
 
 def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
-        chunk_shape, label_mapping={}, m_valid=None, debug=False):
+        chunk_shape, permutation=None, label_mapping={}, m_valid=None,
+        file_dtype=np.float32, debug=False):
     """
     Extracts a full year of era5 data from monthly series of files including
     "rad" "snveg" and "soil" grib1 files and "wbgt" netCDFs, which are yielded
@@ -103,6 +106,9 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
         to be stored alongside the dynamic and time coordinate arrays.
     :@param chunk_shape: 4-tuple of integers (T,Y,X,F) describing the number of
         elements per chunk along each dynamic array axis.
+    :@param permutation: 1D Integer array with the same size as number of valid
+        pixels in m_valid. If provided, static and dynamic spatial axes will
+        be permuted as such before storage.
     """
     extract_methods = {
             "rad":_gen_era5_rad_daily,
@@ -142,6 +148,7 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
             gc.collect()
             arrays = np.concatenate(arrays, axis=-1)
             if H5F is None:
+                assert not out_h5_path.exists(), out_h5_path.name
                 H5F = h5py.File(out_h5_path, "w")
                 D = H5F.create_dataset(
                         name="/data/dynamic",
@@ -151,12 +158,15 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                         compression="gzip",
                         )
                 static_array = static_array[m_valid]
+                if permutation is None:
+                    print(f"WARNING: no spatial permutation provided")
+                    permutation = np.arange(static_array.shape[0])
                 S = H5F.create_dataset(
                         name="/data/static",
                         shape=static_array.shape,
                         maxshape=static_array.shape,
                         )
-                S[...] = static_array
+                S[...] = static_array[permutation]
                 M = H5F.create_dataset(
                         name="/data/mask",
                         shape=m_valid.shape,
@@ -178,7 +188,7 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                     })
             cur_slice = slice(cur_h5_ix, cur_h5_ix+arrays.shape[0])
             D.resize((cur_slice.stop, *arrays.shape[1:]))
-            D[cur_slice] = arrays.astype(np.float32)
+            D[cur_slice] = arrays.astype(file_dtype)[:,permutation]
             T.resize((cur_slice.stop,))
             T[cur_slice] = tmp_times
             cur_h5_ix = cur_slice.stop
@@ -187,6 +197,7 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                 print(f"Extracted {arrays.shape} at {tmpt}; now {D.shape}")
             H5F.flush()
     return out_h5_path
+
 """
 fg_dict_dynamic = {
         "clabels":("time","lat","lon"),
@@ -211,16 +222,24 @@ if __name__=="__main__":
     ## Directories should contain only files that should be loaded to the hdf5
     #data_dir = Path("data")
     data_dir = Path("data")
-    static_pkl = data_dir.joinpath("static/era5_static.pkl")
     out_dir = data_dir.joinpath("timegrids/")
+    static_pkl = data_dir.joinpath("static/era5_static.pkl")
+    perm_pkl = data_dir.joinpath("permutations/permutation_210.pkl")
     workers = 12
     base_h5_path = "timegrid_era5_{year}.h5"
 
+    ## load the static data and boolean valid mask
     slabels,sdata = pkl.load(static_pkl.open("rb"))
-    m_valid = sdata[slabels.index("m_valid")].astype(bool)
+    m_valid_base = sdata[slabels.index("m_valid")].astype(bool)
+    m_lakec =  sdata[slabels.index("lakec")] < .15
+    m_land = sdata[slabels.index("landmask")] >= .8
+    m_valid = m_valid_base & m_lakec & m_land
+    ## load label conversions
     label_mapping = json.load(
             data_dir.joinpath("list_feats_era5.json").open("r")
             )["label-mapping"]
+    ## load the desired spatial permutation
+    _,perm,_ = pkl.load(perm_pkl.open("rb"))
 
     extract_years = list(range(2012,2024))
     era5_dirs = [data_dir.joinpath(f"era5/{y}") for y in extract_years]
@@ -246,6 +265,7 @@ if __name__=="__main__":
         "chunk_shape":(96,32,27),
         "m_valid":m_valid,
         "label_mapping":label_mapping,
+        "permutation":perm[:,0],
         "debug":True,
         } for year in extract_paths.keys()]
 

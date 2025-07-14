@@ -260,8 +260,8 @@ def plot_perm_pkl(perm_pkl:Path, coords:np.array, subgrids:dict,
         rgb = np.stack([rgb for i in range(3)], axis=-1)
         sub_ixs_noperm = valid_idxs[perm[:,0]][in_subset]
         sub_ixs_perm = valid_idxs[in_subset]
-        rgb[sub_ixs_noperm[:,0],sub_ixs_noperm[:,1]] = np.array([0,0,255])
-        rgb[sub_ixs_perm[:,0],sub_ixs_perm[:,1]] = np.array([255,0,0])
+        rgb[sub_ixs_noperm[:,0],sub_ixs_noperm[:,1]] = np.array([255,0,0])
+        rgb[sub_ixs_perm[:,0],sub_ixs_perm[:,1]] = np.array([0,0,255])
         plot_geo_rgb(
                 rgb=rgb,
                 lat_range=(np.amin(coords[:,0]),np.amax(coords[:,0])),
