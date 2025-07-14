@@ -178,6 +178,13 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                         shape=(0,),
                         maxshape=(None,),
                         )
+                P  = H5F.create_dataset(
+                        name="/data/permutation",
+                        shape=(2,permutation.size),
+                        )
+                P[...] = np.stack([
+                    permutation, get_permutation_inverse(permutation)
+                    ], axis=0)
                 H5F["data"].attrs["dynamic"] = json.dumps({
                     "clabels":("time", "space"),
                     "flabels":[label_mapping.get(l, l) for l in labels],
