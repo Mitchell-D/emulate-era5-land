@@ -17,7 +17,7 @@ import shlex
 from pathlib import Path
 from datetime import datetime
 
-from era5_testbed.helpers import get_permutation_inverse
+from emulate_era5_land.helpers import get_permutation_inverse
 
 def _gen_era5_snveg_daily(file_path:Path):
     """ """
@@ -156,6 +156,7 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                         maxshape=(None, *arrays.shape[1:]),
                         chunks=chunk_shape,
                         compression="gzip",
+                        dtype="f4",
                         )
                 static_array = static_array[m_valid]
                 if permutation is None:
@@ -165,22 +166,26 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                         name="/data/static",
                         shape=static_array.shape,
                         maxshape=static_array.shape,
+                        dtype="f8",
                         )
                 S[...] = static_array[permutation]
                 M = H5F.create_dataset(
                         name="/data/mask",
                         shape=m_valid.shape,
                         maxshape=m_valid.shape,
+                        dtype="b",
                         )
                 M[...] = m_valid
                 T = H5F.create_dataset(
                         name="/data/time",
                         shape=(0,),
                         maxshape=(None,),
+                        dtype="f8",
                         )
                 P  = H5F.create_dataset(
                         name="/data/permutation",
                         shape=(2,permutation.size),
+                        dtype="u4",
                         )
                 P[...] = np.stack([
                     permutation, get_permutation_inverse(permutation)
@@ -227,9 +232,9 @@ g.attrs["static"] = json.dumps(fg_dict_static)
 
 if __name__=="__main__":
     ## Directories should contain only files that should be loaded to the hdf5
-    #data_dir = Path("data")
     data_dir = Path("data")
-    out_dir = data_dir.joinpath("timegrids/")
+    #out_dir = data_dir.joinpath("timegrids-new/")
+    out_dir = data_dir.joinpath("/rstor/mdodson/era5/timegrids-new/")
     static_pkl = data_dir.joinpath("static/era5_static.pkl")
     perm_pkl = data_dir.joinpath("permutations/permutation_210.pkl")
     workers = 12

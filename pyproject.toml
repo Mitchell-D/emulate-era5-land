@@ -1,0 +1,18 @@
+# setuptools-driven build system per PEP 518
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emulate_era5_land"
+version = "0.0.1"
+description = "adapting thesis pipeline to era5 data"
+dependencies = [
+  #"krttdkit",
+  #"tracktrain",
+]
+
+[tool.setuptools]
+packages = [
+    "emulate_era5_land",
+    ]

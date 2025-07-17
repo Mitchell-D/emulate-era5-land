@@ -1,0 +1,36 @@
+#!/bin/csh
+### SLURM batch script
+
+### Email address
+#SBATCH --mail-user=mtd0012@uah.edu
+
+### queue type
+###SBATCH -p standard
+#SBATCH -p shared
+
+### TOTAL processors (number of tasks)
+#SBATCH --ntasks 12
+###SBATCH --ntasks 1
+
+### total run time estimate (D-HH:MM)
+#SBATCH -t 2-00:00
+
+### memory (MB per CPU)
+#SBATCH --mem-per-cpu=8G
+
+### Mail to user on job done and fail
+#SBATCH --mail-type=END,FAIL
+
+### Job name
+#SBATCH -J era5-gridstats
+
+### Ouput files
+###SBATCH --open-mode=append ### Don't overwrite existing files
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.out # STDOUT
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.err # STDERR
+
+cd /rhome/mdodson/emulate-era5-land
+
+#Run code
+set runcmd = /nas/rhome/mdodson/.micromamba/envs/learn-torch/bin/python
+${runcmd} -u emulate_era5_land/eval_gridstats.py
