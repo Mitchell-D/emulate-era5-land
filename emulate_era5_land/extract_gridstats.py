@@ -27,9 +27,9 @@ def _mp_get_gs_mmsc(args):
 def _get_gs_varsum(timegrid:Path, means:np.array, spatial_slice=None,
         time_sector_size=None, derived_feats_serial:list=[]):
     """
-    get the standard deviation of this timegrid's data per
-    month/ToD/pixel/feature combination, and return the result as a
-    (12,24,P,F,1) array of floats and a (12,24) array of int counts.
+    get the variance sum of this timegrid's data per month/ToD/pixel/feature
+    combination, and return the result as a (12,24,P,F,1) array of floats and
+    a (12,24) array of int counts.
 
     :@param timegrid: File from which to extract the data
     :@param means: (12,24,P,F) global mean values per month,hour,pixel,feat
@@ -91,8 +91,9 @@ def _get_gs_varsum(timegrid:Path, means:np.array, spatial_slice=None,
     ## (min, max, sum) per combination of (month, ToD, pixel, feature)
     if spatial_slice is None:
         spatial_slice = slice(0,tg_shape[1])
-    varsum_shape = (12,24,spatial_slice.stop-spatial_slice.start,tg_shape[2],1)
-    assert varsum_shape==means.shape
+    npx = spatial_slice.stop-spatial_slice.start
+    varsum_shape = (12,24,npx,len(all_feats),1)
+    assert varsum_shape==means.shape,(varsum_shape,means.shape)
     varsum = np.zeros(varsum_shape, dtype=np.float64)
     counts = np.zeros((12,24), dtype=int)
 
@@ -425,13 +426,16 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
 
     ## load the array into the new gridstats hdf5, depermuting if requested
     if depermute:
-        G[:,:,:,:,:3] = mms_total[:,:,tg_perm[1]]
+        ## do in for loop in attepmt to prevent memory blowup. awkward.
+        for i in range(mms_total.shape[0]):
+            for j in range(mms_total.shape[1]):
+                G[i,j,:,:,:3] = mms_total[i,j][tg_perm[1]]
     else:
         G[:,:,:,:,:3] = mms_total
     C[...] = counts_total
     F.flush()
 
-    ## second pass: compute standard deviation using mean values
+    ## second pass: compute variance sum using mean values
     global_means = mms_total[...,2] / counts_total[:,:,np.newaxis,np.newaxis]
 
     ## beg the garbage collector
@@ -440,7 +444,7 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
 
     args = [{
         "timegrid":tg,
-        "means":global_means[:,:,ss],
+        "means":global_means[:,:,ss,...,np.newaxis],
         "spatial_slice":ss,
         #"depermute":depermute,
         "time_sector_size":time_sector_size,
@@ -448,7 +452,7 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
         } for tg in timegrids for ss in ss_slices]
     counts_per_tg_varsum = {}
     with Pool(nworkers) as pool:
-        varsum_total = np.zeros(*stats_shape[:-1], 1)
+        varsum_total = np.zeros((*stats_shape[:-1], 1))
         for a,(counts,varsum) in pool.imap_unordered(_mp_get_gs_varsum, args):
             slc = a["spatial_slice"]
             tgn = a["timegrid"].as_posix()
@@ -494,13 +498,13 @@ if __name__=="__main__":
     #'''
     print(timegrids)
     make_gridstat_hdf5(
-            timegrids=timegrids,
+            timegrids=[timegrids[0]],
             out_file=gridstat_dir.joinpath(
-                f"gridstats_era5_2012-2023_2.h5"),
+                f"gridstats_era5_2012-2023_4.h5"),
             depermute=True,
             time_sector_size=24*14,
             space_sector_chunks=16,
-            nworkers=12,
+            nworkers=16,
             debug=True,
             )
     #'''
