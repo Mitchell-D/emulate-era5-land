@@ -92,22 +92,24 @@ def _get_gs_varsum(timegrid:Path, means:np.array, spatial_slice=None,
     if spatial_slice is None:
         spatial_slice = slice(0,tg_shape[1])
     npx = spatial_slice.stop-spatial_slice.start
-    varsum_shape = (12,24,npx,len(all_feats),1)
+    varsum_shape = (12,24,npx,len(all_feats))
     assert varsum_shape==means.shape,(varsum_shape,means.shape)
     varsum = np.zeros(varsum_shape, dtype=np.float64)
     counts = np.zeros((12,24), dtype=int)
 
     ## go ahead and extract the full time for this spatial area and close file
-    #tg_dynamic = tg_dynamic[:,spatial_slice]
-    #tg_static = tg_static[spatial_slice]
-    #tg_open.close()
+    tg_dynamic = tg_dynamic[:,spatial_slice]
+    tg_static = tg_static[spatial_slice]
+    tg_open.close()
 
     for slc in tslices:
         tinit = perf_counter()
         ## evaluate derived features and reorder stored feats as requested.
         tmpx = _calc_feat_array(
-                src_array=tg_dynamic[slc,spatial_slice], ## (T, P, Fd)
-                static_array=tg_static[spatial_slice], ## (P, Fs)
+                #src_array=tg_dynamic[slc,spatial_slice], ## (T, P, Fd)
+                #static_array=tg_static[spatial_slice], ## (P, Fs)
+                src_array=tg_dynamic[slc], ## (T, P, Fd)
+                static_array=tg_static, ## (P, Fs)
                 stored_feat_idxs=sfix,
                 derived_data=drv_info,
                 )
@@ -121,7 +123,7 @@ def _get_gs_varsum(timegrid:Path, means:np.array, spatial_slice=None,
             ## Determine min/max (P,F) for this timestep
             counts[midxs[i],tidxs[i]] += 1
             tmp_means = means[midxs[i],tidxs[i],:,:]
-            varsum[midxs[i],tidxs[i],:,:,0] += (tmpx[i]-tmp_means)**2
+            varsum[midxs[i],tidxs[i],:,:,:] += (tmpx[i,...,None]-tmp_means)**2
         gc.collect()
         print(timegrid.name, spatial_slice, slc, f"{perf_counter()-tinit:.3f}")
     tg_open.close()
@@ -189,9 +191,9 @@ def _get_gs_mmsc(timegrid:Path, time_sector_size=None, spatial_slice=None,
             )
 
     ## go ahead and extract the full year for this spatial area and close file
-    #tg_dynamic = tg_dynamic[:,spatial_slice]
-    #tg_static = tg_static[spatial_slice]
-    #tg_open.close()
+    tg_dynamic = tg_dynamic[:,spatial_slice]
+    tg_static = tg_static[spatial_slice]
+    tg_open.close()
 
     ## construct a (M,T) counts array and (M,T,P,Fd,3) array for
     ## (min, max, sum) per combination of (month, ToD, pixel, feature)
@@ -205,8 +207,10 @@ def _get_gs_mmsc(timegrid:Path, time_sector_size=None, spatial_slice=None,
         tinit = perf_counter()
         ## evaluate derived features and reorder stored feats as requested.
         tmpx = _calc_feat_array(
-                src_array=tg_dynamic[slc,spatial_slice], ## (T, P, Fd)
-                static_array=tg_static[spatial_slice], ## (P, Fs)
+                #src_array=tg_dynamic[slc,spatial_slice], ## (T, P, Fd)
+                #static_array=tg_static[spatial_slice], ## (P, Fs)
+                src_array=tg_dynamic[slc], ## (T, P, Fd)
+                static_array=tg_static, ## (P, Fs)
                 stored_feat_idxs=sfix,
                 derived_data=drv_info,
                 )
@@ -426,10 +430,11 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
 
     ## load the array into the new gridstats hdf5, depermuting if requested
     if depermute:
-        ## do in for loop in attepmt to prevent memory blowup. awkward.
+        ## loop over (month,time) in attempt to avoid memory overflow. awkward.
         for i in range(mms_total.shape[0]):
             for j in range(mms_total.shape[1]):
                 G[i,j,:,:,:3] = mms_total[i,j][tg_perm[1]]
+            gc.collect() ## please garbage god don't let my memory blow up :O
     else:
         G[:,:,:,:,:3] = mms_total
     C[...] = counts_total
@@ -444,7 +449,7 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
 
     args = [{
         "timegrid":tg,
-        "means":global_means[:,:,ss,...,np.newaxis],
+        "means":global_means[:,:,ss],
         "spatial_slice":ss,
         #"depermute":depermute,
         "time_sector_size":time_sector_size,
@@ -452,11 +457,11 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
         } for tg in timegrids for ss in ss_slices]
     counts_per_tg_varsum = {}
     with Pool(nworkers) as pool:
-        varsum_total = np.zeros((*stats_shape[:-1], 1))
+        varsum_total = np.zeros(stats_shape[:-1])
         for a,(counts,varsum) in pool.imap_unordered(_mp_get_gs_varsum, args):
             slc = a["spatial_slice"]
             tgn = a["timegrid"].as_posix()
-            varsum_total[:,:,slc,:,0] += varsum
+            varsum_total[:,:,slc,:] += varsum
             #G[:,:,slc,:,3] += varsum
             ## counts should be redundant across spatial sectors per timegrid
             if tgn in counts_per_tg_varsum.keys():
@@ -478,9 +483,12 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
 
     ## load the array into the new gridstats hdf5, depermuting if requested
     if depermute:
-        G[:,:,:,:,3] = varsum[:,:,tg_perm[1]]
+        for i in range(varsum_total.shape[0]):
+            for j in range(varsum_total.shape[1]):
+                G[i,j,:,:,3] = varsum_total[i,j][tg_perm[1]]
+            gc.collect()
     else:
-        G[:,:,:,:,3] = varsum
+        G[:,:,:,:,3] = varsum_total
     F.flush()
     F.close()
     return out_file
@@ -498,9 +506,9 @@ if __name__=="__main__":
     #'''
     print(timegrids)
     make_gridstat_hdf5(
-            timegrids=[timegrids[0]],
+            timegrids=timegrids,
             out_file=gridstat_dir.joinpath(
-                f"gridstats_era5_2012-2023_4.h5"),
+                f"gridstats_era5_2012-2023_5.h5"),
             depermute=True,
             time_sector_size=24*14,
             space_sector_chunks=16,

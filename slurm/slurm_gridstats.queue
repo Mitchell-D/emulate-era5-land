@@ -16,7 +16,7 @@
 #SBATCH -t 2-00:00
 
 ### memory (MB per CPU)
-#SBATCH --mem-per-cpu=32G
+#SBATCH --mem-per-cpu=46G
 
 ### Mail to user on job done and fail
 #SBATCH --mail-type=END,FAIL
@@ -26,8 +26,8 @@
 
 ### Ouput files
 ###SBATCH --open-mode=append ### Don't overwrite existing files
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats_4.out # STDOUT
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats_4.err # STDERR
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats_5.out # STDOUT
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats_5.err # STDERR
 
 cd /rhome/mdodson/emulate-era5-land
 
