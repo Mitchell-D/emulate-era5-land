@@ -123,7 +123,7 @@ def _get_gs_varsum(timegrid:Path, means:np.array, spatial_slice=None,
             ## Determine min/max (P,F) for this timestep
             counts[midxs[i],tidxs[i]] += 1
             tmp_means = means[midxs[i],tidxs[i],:,:]
-            varsum[midxs[i],tidxs[i],:,:,:] += (tmpx[i,...,None]-tmp_means)**2
+            varsum[midxs[i],tidxs[i],:,:] += (tmpx[i]-tmp_means)**2
         gc.collect()
         print(timegrid.name, spatial_slice, slc, f"{perf_counter()-tinit:.3f}")
     tg_open.close()
@@ -201,7 +201,7 @@ def _get_gs_mmsc(timegrid:Path, time_sector_size=None, spatial_slice=None,
         spatial_slice = slice(0,tg_shape[1])
     mms_shape = (12,24,spatial_slice.stop-spatial_slice.start,tg_shape[2],3)
     mms = np.full(mms_shape, np.nan, dtype=np.float64)
-    mms[-1] = 0 ## initialize sum to zero
+    mms[...,-1] = 0 ## initialize sum to zero
     counts = np.zeros((12,24), dtype=int)
     for slc in tslices:
         tinit = perf_counter()
@@ -432,8 +432,13 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
     if depermute:
         ## loop over (month,time) in attempt to avoid memory overflow. awkward.
         for i in range(mms_total.shape[0]):
-            for j in range(mms_total.shape[1]):
-                G[i,j,:,:,:3] = mms_total[i,j][tg_perm[1]]
+            #for j in range(mms_total.shape[1]):
+            t_init = perf_counter()
+            tmparr = mms_total[i][:,tg_perm[1]]
+            t_reparam = perf_counter()
+            G[i,:,:,:,:3] = tmparr
+            t_finish = perf_counter()
+            print(f"{i:02}: {t_reparam-t_init:.2f} {t_finish-t_reparam}")
             gc.collect() ## please garbage god don't let my memory blow up :O
     else:
         G[:,:,:,:,:3] = mms_total
@@ -484,8 +489,7 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
     ## load the array into the new gridstats hdf5, depermuting if requested
     if depermute:
         for i in range(varsum_total.shape[0]):
-            for j in range(varsum_total.shape[1]):
-                G[i,j,:,:,3] = varsum_total[i,j][tg_perm[1]]
+            G[i,:,:,:,3] = varsum_total[i][:,tg_perm[1]]
             gc.collect()
     else:
         G[:,:,:,:,3] = varsum_total
@@ -503,16 +507,16 @@ if __name__=="__main__":
     timegrids = sorted([p for p in tg_dir.iterdir() if substr in p.name])
 
     ## Generate gridstats file over a single region
-    #'''
+    '''
     print(timegrids)
     make_gridstat_hdf5(
             timegrids=timegrids,
             out_file=gridstat_dir.joinpath(
-                f"gridstats_era5_2012-2023_5.h5"),
+                f"gridstats_era5_2012-2023.h5"),
             depermute=True,
             time_sector_size=24*14,
             space_sector_chunks=16,
             nworkers=16,
             debug=True,
             )
-    #'''
+    '''

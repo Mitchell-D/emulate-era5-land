@@ -1,0 +1,42 @@
+#!/bin/csh
+### SLURM batch script
+
+### Email address
+#SBATCH --mail-user=mtd0012@uah.edu
+
+
+### TOTAL processors (number of tasks)
+#SBATCH --ntasks 24
+###SBATCH --ntasks 2
+
+### total run time estimate (D-HH:MM)
+#SBATCH -t 3-00:00
+
+### memory (MB per CPU)
+###SBATCH --mem-per-cpu=16G
+#SBATCH --mem-per-cpu=1G
+
+### Mail to user on job done and fail
+#SBATCH --mail-type=END,FAIL
+
+### Partition (queue), select shared for GPU
+### Optionally specify a GPU type: --gres=gpu:rtx5000:1 or --gres=gpu:a100:1
+###SBATCH -p shared --gres=gpu:a100:1
+###SBATCH -p shared --gres=gpu:rtx5000:1
+###SBATCH -p shared --gres=gpu:1
+#SBATCH -p standard
+
+##SBATCH -J print_table
+#SBATCH -J plot_case-studies
+
+##SBATCH --open-mode=append ### Don't overwrite existing files
+#SBATCH -o /rhome/mdodson/testbed/slurm/out/slurm_plot.out ## STDOUT
+#SBATCH -e /rhome/mdodson/testbed/slurm/out/slurm_plot.err ## STDERR
+##SBATCH -o /rhome/mdodson/testbed/slurm/out/slurm_print.out ## STDOUT
+##SBATCH -e /rhome/mdodson/testbed/slurm/out/slurm_print.err ## STDERR
+
+cd /rhome/mdodson/emulate-era5-land
+
+set runcmd = /rhome/mdodson/.micromamba/envs/learn-torch/bin/python
+
+${runcmd} -u plot_grid_pred_ensembles.py

@@ -332,3 +332,115 @@ def mp_get_permutation(args):
 
 def mp_get_permutation_conv(args):
     return args,get_permutation_conv(**args)
+
+def sector_slices(sector_shape, bounding_box,
+        iteration_order=None, separate_sparse=True):
+    """
+    get an ordered list of tuples corresponding to "slices" of a grid
+
+    Along each dimension, sector inclusion can be specified according to:
+
+        None        : all elements along axis at once
+        integer     : maximum size of slice in number of elements
+        list[int]   : collection of individual indeces to extract along axis
+
+    Along each dimension the bounding box to break into sectors is defined per:
+
+        integer     : number of elements along the axis indexed from zero
+        list[int]   : 2-element list [min, max] range of indeces
+
+    :@param sector_shape: Maximum shape along each dimension for sectors that
+        are returned. The actual shape of returned sectors may be smaller if
+        a border of subgrid_bounds is encountered.
+    :@param subgrid_bounds:
+    """
+    assert len(bounding_box)==len(sector_shape)
+
+    ## establish the dimensions of the bounding box we will be iterating within
+    bbox = [] ## normalized shape of bounding box
+    boffset = [] ## integer offset number of elements per dimension
+    for bdim in bounding_box:
+        try:
+            if isinstance(bdim, tuple):
+                assert len(bdim)==2
+                assert all(isinstance(v,int) and v>0 for v in bdim)
+                assert bdim[0]<bdim[1]
+                bbox.append(bdim[1]-bdim[0])
+                boffset.append(bdim[0])
+                continue
+            elif isinstance(bdim, int):
+                assert bdim>0
+                bbox.append(bdim)
+                boffset.append(0)
+            else:
+                raise ValueError("unrecognized bbox type")
+        except:
+            raise ValueError(
+                    "All axes in the boundary box definition must " + \
+                    "be either an integer maximum size or a 2-tuple " + \
+                    "range of integers like [start, stop)")
+
+    ## determine the type and number of iterations per axis
+    iclasses = [] ## iteration type classes: [span, tile, sparse]
+    icounts = [] ## number of iterations along the axis
+    islices = [[] for i in range(len(sector_shape))]
+    for ax,s in enumerate(sector_shape):
+        if s is None:
+            iclasses.append(0)
+            icounts.append(1)
+            islices[ax].append(slice(boffset[ax],boffset[ax]+bbox[ax]))
+        ## tiled range of elements
+        elif isinstance(s, int):
+            assert s <= bbox[ax], "slice along {ax = } is too large"
+            iclasses.append(1)
+            nslc = bbox[ax]//s + bool(bbox[ax]%s)
+            icounts.append(nslc)
+            for c in range(nslc):
+                ci = boffset[ax] + c*s
+                cf = min([ci+s, boffset[ax]+bbox[ax]])
+                islices[ax].append(slice(ci, cf))
+        ## sparsely defined elements
+        elif isinstance(s, (list,tuple,np.ndarray)):
+            s = np.asarray(s)
+            assert len(s.shape)==1, "use 1d array of indeces"
+            assert np.issubdtype(s.dtype, np.integer)
+            for v in s:
+                assert boffset[ax] <= v < (boffset[ax] + bbox[ax])
+            iclasses.append(2)
+            if separate_sparse:
+                icounts.append(s.size)
+                for v in s:
+                    islices[ax].append(slice(v,v+1))
+            else:
+                icounts.append(1)
+                islices[ax].append(s)
+        else:
+            raise ValueError(f"Unrecognized sector argument: {type(s) = } " + \
+                    "must be None, an integer, or an iterable.")
+
+
+    if iteration_order is None:
+        iteration_order = list(range(len(bounding_box)))
+    else:
+        iteration_order = list(iteration_order)
+        if len(iteration_order)!=len(bounding_box):
+            excluded = list(set(range(len(bounding_box)))-set(iteration_order))
+            for ex in excluded:
+                assert icounts[ex]==1,"Axes with multiple iteration steps " + \
+                        "must also be provided in the iteration order list!"
+
+                iteration_order.append(ex)
+
+    ## reverse permutation of iteration order
+    r_order,_ = zip(*sorted(
+        enumerate(iteration_order[::-1]),
+        key=lambda p:p[1]))
+
+    ## develop indeces of slices in the requested order of iteration
+    sidxs = np.stack(np.meshgrid(
+        *[np.arange(icounts[ix]) for ix in iteration_order[::-1]],
+        indexing="ij"
+        ), axis=-1).reshape(-1, len(icounts))[...,r_order]
+
+    return [[islices[j][sidxs[i,j]] for j in range(sidxs.shape[1])]
+            for i in range(sidxs.shape[0])]

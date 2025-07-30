@@ -26,11 +26,12 @@
 #SBATCH -J gen-test
 
 ###SBATCH --open-mode=append ## Don't overwrite existing files
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_generator-test.out
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_generator-test.err
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_gridstats_eval.out
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_gridstats_eval.err
 
 cd /rhome/mdodson/emulate-era5-land
 
 ## Run code
 set runcmd = /rhome/mdodson/.micromamba/envs/learn-torch/bin/python
-${runcmd} -u scripts/test_generators.py
+##${runcmd} -u scripts/test_generators.py
+${runcmd} -u scripts/eval_gridstats.py
