@@ -15,64 +15,53 @@ import subprocess
 import gc
 import shlex
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime,timezone
 
 from emulate_era5_land.helpers import get_permutation_inverse
 
-def _gen_era5_snveg_daily(file_path:Path):
-    """ """
-    gf = pygrib.open(file_path.as_posix())
-    lat,lon = gf[1].latlons()
-    rec_labels = ["sd", "var67", "var66"]
-    daily_recs = len(rec_labels) * 24
-    assert gf.messages % daily_recs == 0
-    for i in range(gf.messages // daily_recs):
-        gf.seek(i*daily_recs)
-        rec_array = [x.values for x in gf.read(daily_recs)]
-        rec_array = np.stack([
-            rec_array[j*len(rec_labels):(j+1)*len(rec_labels)]
-            for j in range(24)
-            ], axis=0)
-        rec_array = np.transpose(rec_array, (0,2,3,1))
-        yield (rec_labels,rec_array)
+def get_grib_extract_gen(rec_labels, accumulation_vars):
+    """
+    returns a generator that accepts a monthly grib file and the grib file
+    for the previous month, and generates hourly data on a daily basis such
+    that the provided accumulation_vars have been de-accumulated according to:
+    https://confluence.ecmwf.int/pages/viewpage.action?pageId=197702790
+    """
+    def _gen_era5_grib_daily(file_path:Path, prev_file_path:Path):
+        """ """
+        gf = pygrib.open(file_path.as_posix())
+        lat,lon = gf[1].latlons()
+        #rec_labels = ["fal", "slhf", "ssr", "str", "sshf", "ssrd", "strd"]
+        ## get the last frame of records from the previous month's file for
+        ## accumulations. The first timestep (0z on the first of this month) is
+        ## accumulated from this value
+        with pygrib.open(prev_file_path.as_posix()) as pgf:
+            pgf.seek(len(pgf)-len(rec_labels))
+            prev_frame = pgf.read(len(rec_labels))
 
-def _gen_era5_soil_daily(file_path:Path):
-    """ """
-    gf = pygrib.open(file_path.as_posix())
-    lat,lon = gf[1].latlons()
-    rec_labels = ["skt","stl1","stl2","stl3","stl4","swvl1","swvl2","swvl3",
-            "swvl4","var251","e","tp"]
-    daily_recs = len(rec_labels) * 24
-    assert gf.messages % daily_recs == 0
-    for i in range(gf.messages // daily_recs):
-        gf.seek(i*daily_recs)
-        rec_array = [x.values for x in gf.read(daily_recs)]
-        rec_array = np.stack([
-            rec_array[j*len(rec_labels):(j+1)*len(rec_labels)]
-            for j in range(24)
-            ], axis=0)
-        rec_array = np.transpose(rec_array, (0,2,3,1))
-        yield (rec_labels,rec_array)
+        daily_recs = len(rec_labels) * 24
+        assert gf.messages % daily_recs == 0
+        for i in range(gf.messages // daily_recs):
+            gf.seek(i*daily_recs)
+            ## (F*24,Y,X)
+            rec_array = [x.values for x in gf.read(daily_recs)]
+            ## (24,Y,X,F)
+            rec_array = np.stack([
+                rec_array[j*len(rec_labels):(j+1)*len(rec_labels)]
+                for j in range(24)
+                ], axis=0)
+            new_last_frame = np.copy(rec_array[-1,:,:,:])
+            rec_array = np.transpose(rec_array, (0,2,3,1))
+            for k,l in enumerate(rec_labels):
+                if l in accumulation_vars:
+                    rec_array[0,:,:,k] = rec_array[0,:,:,k] - prev_frame[:,:,k]
+                    rec_array[2:,:,:,k] = np.diff(rec_array[1:,:,:,k], axis=0)
+            prev_frame = new_last_frame
+            yield (rec_labels,rec_array)
+    return _gen_era5_grib_daily
 
-def _gen_era5_rad_daily(file_path:Path):
+def _gen_era5_wbgt_daily(file_path:Path, prev_file_path:Path):
     """ """
-    gf = pygrib.open(file_path.as_posix())
-    lat,lon = gf[1].latlons()
-    rec_labels = ["fal", "slhf", "ssr", "str", "sshf", "ssrd", "strd"]
-    daily_recs = len(rec_labels) * 24
-    assert gf.messages % daily_recs == 0
-    for i in range(gf.messages // daily_recs):
-        gf.seek(i*daily_recs)
-        rec_array = [x.values for x in gf.read(daily_recs)]
-        rec_array = np.stack([
-            rec_array[j*len(rec_labels):(j+1)*len(rec_labels)]
-            for j in range(24)
-            ], axis=0)
-        rec_array = np.transpose(rec_array, (0,2,3,1))
-        yield (rec_labels,rec_array)
-
-def _gen_era5_wbgt_daily(file_path:Path):
-    """ """
+    pd = nc.Dataset(prev_file_path, "r")
     d = nc.Dataset(file_path, "r")
     ## ignoring ssrd because it is redundant with the rad files
     labels = ["d2m","t2m","u10","v10","sp"]
@@ -98,9 +87,10 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
     by the day by _get_era5_snveg_daily, _gen_era5_rad_daily,
     _gen_era5_soil_daily, and _gen_era5_wbgt_daily.
 
-    :@param file_dict: Dict mapping integer months [1,12] to a dict of files
-        identified by their data category, one of: (rad, snveg, soil, wbgt)
-        like "era5land_{data_category}_vars_{YYYYmm}.{grib | nc}"
+    :@param file_dict: Dict mapping integer months [1,12] to a dict of 2-tuples
+        identified by their data category, one of: (rad, snveg, soil, wbgt).
+        The tuples must be organized like (prev_month, cur_month) for each
+        data file type in order to rectify accumulated variables
     :@param out_h5_path: Path to the full-year hdf5 file created by this method
     :@param static_array: array of separately-extracted time-invariant values
         to be stored alongside the dynamic and time coordinate arrays.
@@ -110,10 +100,21 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
         pixels in m_valid. If provided, static and dynamic spatial axes will
         be permuted as such before storage.
     """
+    ## generators expect args like (cur_month_file, prev_month_file)
     extract_methods = {
-            "rad":_gen_era5_rad_daily,
-            "snveg":_gen_era5_snveg_daily,
-            "soil":_gen_era5_soil_daily,
+            "snveg":get_grib_extract_gen(
+                rec_labels=["sd", "var67", "var66"],
+                accumulation_vars=[],
+                ),
+            "soil":get_grib_extract_gen(
+                rec_labels=["skt","stl1","stl2","stl3","stl4","swvl1","swvl2",
+                    "swvl3","swvl4","var251","e","tp"],
+                accumulation_vars=["var251","e","tp"],
+                ),
+            "rad":get_grib_extract_gen(
+                rec_labels=["fal","slhf","ssr","str","sshf","ssrd","strd"],
+                accumulation_vars=["slhf","ssr","str","sshf","ssrd","strd"],
+                ),
             "wbgt":_gen_era5_wbgt_daily,
             }
 
@@ -121,7 +122,7 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
     cur_h5_ix = 0
     for mix in range(1,13):
         ## declare generators for this month
-        gens = [extract_methods[vk](file_dict[mix][vk])
+        gens = [extract_methods[vk](*file_dict[mix][vk])
                 for vk in ["wbgt", "snveg", "rad", "soil"]]
         labels = []
         got_labels = False
@@ -205,7 +206,8 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
             T[cur_slice] = tmp_times
             cur_h5_ix = cur_slice.stop
             if debug:
-                tmpt = datetime.fromtimestamp(int(tmp_times[0]))
+                tmpt = datetime.fromtimestamp(int(tmp_times[0]),
+                        tz=timezone.utc)
                 print(f"Extracted {arrays.shape} at {tmpt}; now {D.shape}")
             H5F.flush()
     return out_h5_path
@@ -237,6 +239,7 @@ if __name__=="__main__":
     out_dir = data_dir.joinpath("/rstor/mdodson/era5/timegrids-new/")
     static_pkl = data_dir.joinpath("static/era5_static.pkl")
     perm_pkl = data_dir.joinpath("permutations/permutation_210.pkl")
+    era5_dir = data_dir.joinpath("era5")
     workers = 12
     base_h5_path = "timegrid_era5_{year}.h5"
 
@@ -253,18 +256,35 @@ if __name__=="__main__":
     ## load the desired spatial permutation
     _,perm,_ = pkl.load(perm_pkl.open("rb"))
 
+    ## it's critical that the stored data abides this naming structure
+    path_templates = {
+            "rad":"{year}/era5land_rad_vars_{year}{month:02}.grib",
+            "snveg":"{year}/era5land_snveg_vars_{year}{month:02}.grib",
+            "soil":"{year}/era5land_soil_vars_{year}{month:02}.grib",
+            "wbgt":"{year}/era5land_wbgt_vars_{year}{month:02}.nc",
+            }
+
     extract_years = list(range(2012,2024))
-    era5_dirs = [data_dir.joinpath(f"era5/{y}") for y in extract_years]
+    ## include the december of the prior year for de-accumulation
+    all_my = [(m,y) for m in range(1,13) for y in extract_years]
+    all_my = [(12,extract_years[0]-1)] + all_my
+    all_my = list(zip(all_my[:-1], all_my[1:]))
+    ## list of (previous,current) 2-tuples like (month,year)
     extract_paths = {}
-    for dpath in era5_dirs:
-        for fp in dpath.iterdir():
-            ts = datetime.strptime(fp.stem.split("_")[-1], "%Y%m")
-            vt = fp.stem.split("_")[1]
-            if ts.year not in extract_paths.keys():
-                extract_paths[ts.year] = {}
-            if ts.month not in extract_paths[ts.year].keys():
-                extract_paths[ts.year][ts.month] = {}
-            extract_paths[ts.year][ts.month][vt] = fp
+    ## construct dict hashed like [year][month][file_type] that maps to a
+    ## 2-tuple (current_month_path, prev_month_path)
+    for (pm,py),(cm,cy) in all_my:
+        month_paths = {
+                ftype:(era5_dir.joinpath(tmplt.format(month=cm,year=cy)),
+                    era5_dir.joinpath(tmplt.format(month=pm,year=py)))
+                for ftype,tmplt in path_templates.items()
+                }
+        for cur_mp,prev_mp in month_paths.values():
+            assert cur_mp.exists(),cur_mp.as_posix()
+            assert prev_mp.exists(),prev_mp.as_posix()
+        if cy not in extract_paths.keys():
+            extract_paths[cy] = {}
+        extract_paths[cy][cm] = month_paths
 
     args = [{
         "file_dict":extract_paths[year],
@@ -274,7 +294,7 @@ if __name__=="__main__":
         "static_array":np.stack([
             x if type(x)==np.ndarray else x.data for x in sdata
             ], axis=-1),
-        "chunk_shape":(96,32,27),
+        "chunk_shape":(192,64,27),
         "m_valid":m_valid,
         "label_mapping":label_mapping,
         "permutation":perm[:,0],

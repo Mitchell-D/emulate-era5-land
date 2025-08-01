@@ -6,15 +6,13 @@
 
 
 ### TOTAL processors (number of tasks)
-#SBATCH --ntasks 24
-###SBATCH --ntasks 2
+#SBATCH --ntasks 2
 
 ### total run time estimate (D-HH:MM)
 #SBATCH -t 3-00:00
 
 ### memory (MB per CPU)
-###SBATCH --mem-per-cpu=16G
-#SBATCH --mem-per-cpu=1G
+#SBATCH --mem-per-cpu=16G
 
 ### Mail to user on job done and fail
 #SBATCH --mail-type=END,FAIL
@@ -26,17 +24,15 @@
 ###SBATCH -p shared --gres=gpu:1
 #SBATCH -p standard
 
-##SBATCH -J print_table
-#SBATCH -J plot_case-studies
+#SBATCH -J plot_gridstats
 
 ##SBATCH --open-mode=append ### Don't overwrite existing files
-#SBATCH -o /rhome/mdodson/testbed/slurm/out/slurm_plot.out ## STDOUT
-#SBATCH -e /rhome/mdodson/testbed/slurm/out/slurm_plot.err ## STDERR
-##SBATCH -o /rhome/mdodson/testbed/slurm/out/slurm_print.out ## STDOUT
-##SBATCH -e /rhome/mdodson/testbed/slurm/out/slurm_print.err ## STDERR
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_plot.out ## STDOUT
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_plot.err ## STDERR
 
 cd /rhome/mdodson/emulate-era5-land
 
 set runcmd = /rhome/mdodson/.micromamba/envs/learn-torch/bin/python
 
-${runcmd} -u plot_grid_pred_ensembles.py
+#${runcmd} -u scripts/eval_gridstats.py
+${runcmd} -u scripts/test_series_alignment.py

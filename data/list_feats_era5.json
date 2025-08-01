@@ -74,8 +74,19 @@
         "slhf":"lhtfl",
         "ssr":"swnet",
         "str":"lwnet",
-        "falb":"falb"
+        "fal":"alb"
     },
+    "accumulation-vars":[
+        "lhtfl",
+        "shtfl",
+        "dlwrf",
+        "dswrf",
+        "lwnet",
+        "swnet",
+        "evp",
+        "apcp",
+        "pevap"
+    ],
     "vegtypes":{
         "1":"crops",
         "2":"grass",
