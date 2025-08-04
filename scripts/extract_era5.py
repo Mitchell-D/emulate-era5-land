@@ -27,16 +27,20 @@ def get_grib_extract_gen(rec_labels, accumulation_vars):
     https://confluence.ecmwf.int/pages/viewpage.action?pageId=197702790
     """
     def _gen_era5_grib_daily(file_path:Path, prev_file_path:Path):
-        """ """
+        """
+        assumes the first len(rec_labels) records of this file correspond to 0z
+        on the first day of this monthly file, and that the prev_file_path's
+        last len(rec_labels) records are the 23z accumulations just prior.
+        """
         gf = pygrib.open(file_path.as_posix())
         lat,lon = gf[1].latlons()
-        #rec_labels = ["fal", "slhf", "ssr", "str", "sshf", "ssrd", "strd"]
         ## get the last frame of records from the previous month's file for
         ## accumulations. The first timestep (0z on the first of this month) is
         ## accumulated from this value
         with pygrib.open(prev_file_path.as_posix()) as pgf:
             pgf.seek(len(pgf)-len(rec_labels))
             prev_frame = pgf.read(len(rec_labels))
+            prev_frame = np.stack([x.values for x in prev_frame], axis=-1)
 
         daily_recs = len(rec_labels) * 24
         assert gf.messages % daily_recs == 0
@@ -49,12 +53,16 @@ def get_grib_extract_gen(rec_labels, accumulation_vars):
                 rec_array[j*len(rec_labels):(j+1)*len(rec_labels)]
                 for j in range(24)
                 ], axis=0)
-            new_last_frame = np.copy(rec_array[-1,:,:,:])
             rec_array = np.transpose(rec_array, (0,2,3,1))
+            ## Store 23z from this day for tomorrow
+            new_last_frame = np.copy(rec_array[-1,:,:,:])
             for k,l in enumerate(rec_labels):
                 if l in accumulation_vars:
+                    ## 0z is 0z today minus 23z yesterday
                     rec_array[0,:,:,k] = rec_array[0,:,:,k] - prev_frame[:,:,k]
+                    ## 1z stays the same, 2z-23z are forward-differenced
                     rec_array[2:,:,:,k] = np.diff(rec_array[1:,:,:,k], axis=0)
+            ## cycle final accumulated state (at 23z) of this day to tomorrow
             prev_frame = new_last_frame
             yield (rec_labels,rec_array)
     return _gen_era5_grib_daily
@@ -159,10 +167,18 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                         compression="gzip",
                         dtype="f4",
                         )
-                static_array = static_array[m_valid]
                 if permutation is None:
                     print(f"WARNING: no spatial permutation provided")
                     permutation = np.arange(static_array.shape[0])
+                L = H5F.create_dataset(
+                        name="/data/latlon",
+                        shape=(*static_array.shape[:2],2),
+                        maxshape=(*static_array.shape[:2],2),
+                        dtype="f8",
+                        )
+                L[...,0] = static_array[...,static_labels.index("lat")]
+                L[...,1] = static_array[...,static_labels.index("lon")]
+                static_array = static_array[m_valid]
                 S = H5F.create_dataset(
                         name="/data/static",
                         shape=static_array.shape,
@@ -195,9 +211,25 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                     "clabels":("time", "space"),
                     "flabels":[label_mapping.get(l, l) for l in labels],
                     })
+                H5F["data"].attrs["latlon"] = json.dumps({
+                    "clabels":("lat","lon"),
+                    "flabels":("lat","lon"),
+                    })
                 H5F["data"].attrs["static"] = json.dumps({
                     "clabels":("space",),
                     "flabels":[label_mapping.get(l, l) for l in static_labels],
+                    })
+                H5F["data"].attrs["mask"] = json.dumps({
+                    "clabels":("lat","lon"),
+                    "flabels":tuple(),
+                    })
+                H5F["data"].attrs["time"] = json.dumps({
+                    "clabels":("time",),
+                    "flabels":tuple(),
+                    })
+                H5F["data"].attrs["permutation"] = json.dumps({
+                    "clabels":("space",),
+                    "flabels":("fwd","inv"),
                     })
             cur_slice = slice(cur_h5_ix, cur_h5_ix+arrays.shape[0])
             D.resize((cur_slice.stop, *arrays.shape[1:]))
@@ -211,26 +243,6 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                 print(f"Extracted {arrays.shape} at {tmpt}; now {D.shape}")
             H5F.flush()
     return out_h5_path
-
-"""
-fg_dict_dynamic = {
-        "clabels":("time","lat","lon"),
-        "flabels":tuple(nldas_labels+noahlsm_labels),
-        "meta":{ ## extract relevant info parsed from wgrib
-            "nldas":[(d["name"], d["param_pds"], d["lvl_str"])
-                for d in nldas_info],
-            "noah":[(d["name"], d["param_pds"], d["lvl_str"])
-                for d in noah_info],
-            }
-        }
-fg_dict_static = {
-        "clabels":("lat","lon"),
-        "flabels":tuple(static_labels),
-        "meta":{}
-        }
-g.attrs["dynamic"] = json.dumps(fg_dict_dynamic)
-g.attrs["static"] = json.dumps(fg_dict_static)
-"""
 
 if __name__=="__main__":
     ## Directories should contain only files that should be loaded to the hdf5

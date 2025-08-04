@@ -9,7 +9,7 @@ import random as rand
 import json
 import gc
 import h5py
-from datetime import datetime
+from datetime import datetime,timezone
 from time import perf_counter
 from pathlib import Path
 from multiprocessing import Pool
@@ -49,12 +49,12 @@ def _get_gs_varsum(timegrid:Path, means:np.array, spatial_slice=None,
     ## extract month and ToD indeces associated with each timestep
     tmp_months = np.array([
         t.month-1 for t in tuple(map(
-            lambda s:datetime.fromtimestamp(int(s)),
+            lambda s:datetime.fromtimestamp(int(s), tz=timezone.utc),
             tg_open["/data/time"][...]))
         ], dtype=np.uint8)
     tmp_tods = np.array([
         t.hour + (t.minute // 30) for t in tuple(map(
-            lambda s:datetime.fromtimestamp(int(s)),
+            lambda s:datetime.fromtimestamp(int(s), tz=timezone.utc),
             tg_open["/data/time"][...]))
         ], dtype=np.uint8)
 
@@ -152,12 +152,12 @@ def _get_gs_mmsc(timegrid:Path, time_sector_size=None, spatial_slice=None,
     ## extract month and ToD indeces associated with each timestep
     tmp_months = np.array([
         t.month-1 for t in tuple(map(
-            lambda s:datetime.fromtimestamp(int(s)),
+            lambda s:datetime.fromtimestamp(int(s), tz=timezone.utc),
             tg_open["/data/time"][...]))
         ], dtype=np.uint8)
     tmp_tods = np.array([
         t.hour + (t.minute // 30) for t in tuple(map(
-            lambda s:datetime.fromtimestamp(int(s)),
+            lambda s:datetime.fromtimestamp(int(s), tz=timezone.utc),
             tg_open["/data/time"][...]))
         ], dtype=np.uint8)
 
@@ -298,6 +298,7 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
             tg_slabels = json.loads(
                     tg_open["data"].attrs["static"])["flabels"]
             tg_static = tg_open["/data/static"][...]
+            tg_latlon = tg_open["/data/latlon"][...]
             tg_perm = tg_open["/data/permutation"][...].astype(int)
             tg_mask = tg_open["/data/mask"][...]
             if depermute:
@@ -309,6 +310,8 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
                     "Timegrid grid shapes & feature count must be uniform"
             assert np.all(tg_mask == tg_open["/data/mask"][...]), \
                     "Timegrid 2d valid mask must be uniform"
+            assert np.all(tg_latlon == tg_open["/data/latlon"][...]), \
+                    "Timegrid 2d latlon arrays must be uniform"
             assert tuple(tg_dlabels) == tuple(
                     json.loads(tg_open["data"].attrs["dynamic"])["flabels"])
             assert np.all(tg_perm == tg_open["/data/permutation"][...])
@@ -337,6 +340,12 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
             dtype="u4",
             )
     ## Create and load the static datasets, permutations, and 2d valid mask
+    L = F.create_dataset(
+            name="/data/latlon",
+            shape=tg_latlon.shape,
+            dtype="f8",
+            )
+    L[...] = tg_latlon
     S = F.create_dataset(
             name="/data/static",
             shape=tg_static.shape,
@@ -499,7 +508,7 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
 
 if __name__=="__main__":
     data_dir = Path("/rstor/mdodson/era5")
-    tg_dir = data_dir.joinpath("timegrids-new")
+    tg_dir = data_dir.joinpath("timegrids")
     #static_pkl_path = data_dir.joinpath("static/nldas_static_cropped.pkl")
     gridstat_dir = data_dir.joinpath("gridstats")
 
@@ -507,7 +516,7 @@ if __name__=="__main__":
     timegrids = sorted([p for p in tg_dir.iterdir() if substr in p.name])
 
     ## Generate gridstats file over a single region
-    '''
+    #'''
     print(timegrids)
     make_gridstat_hdf5(
             timegrids=timegrids,
@@ -519,4 +528,4 @@ if __name__=="__main__":
             nworkers=16,
             debug=True,
             )
-    '''
+    #'''

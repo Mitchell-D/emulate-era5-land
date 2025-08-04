@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import json
 from datetime import datetime
+from datetime import timezone as tz
 
 from emulate_era5_land.plotting import plot_time_lines_multiy
 
@@ -10,9 +11,12 @@ if __name__=="__main__":
     target_latlon = (34.729, -86.585)
     ## rain event focus
     #time_range = (datetime(2012, 3, 8, 4), datetime(2012,3,8,12))
-    #time_range = (datetime(2012, 3, 8), datetime(2012,3,12))
+    ## multi day time period
+    time_range = (datetime(2012,3,8,tzinfo=tz.utc),
+            datetime(2012,3,12,tzinfo=tz.utc))
     ## hour zero
-    time_range = (datetime(2011, 12, 31), datetime(2012,1,2))
+    #time_range = (datetime(2011,12,31,tzinfo=tz.utc),
+    #        datetime(2012,1,2,tzinfo=tz.utc))
     timegrid_path = Path("data/timegrids/timegrid_era5_2012.h5")
 
     F = h5py.File(timegrid_path, "r")
@@ -23,16 +27,16 @@ if __name__=="__main__":
     lon = sdata[...,sattrs["flabels"].index("lon")]
     target_ix = np.argmin((lat-target_latlon[0])**2+(lon-target_latlon[1])**2)
     etimes = F["/data/time"][...]
-    dtimes = [datetime.fromtimestamp(int(t)) for t in etimes]
+    dtimes = [datetime.fromtimestamp(int(t),tz=tz.utc) for t in etimes]
     m_time = np.asarray([
         t >= time_range[0] and t < time_range[1] for t in dtimes
         ])
     extract_vars = [
             #"apcp", "tsoil-07", "tsoil-28", ## check rain
-            #"lhtfl", "shtfl",
-            #"lwnet", "swnet",
+            "lhtfl", "shtfl",
+            "lwnet", "swnet",
             #"evp", "pevap",
-            "dlwrf", "dswrf"
+            #"dlwrf", "dswrf",
             #"apcp",
             ]
 
@@ -41,7 +45,7 @@ if __name__=="__main__":
         x = F["/data/dynamic"][:,target_ix,dattrs["flabels"].index(fl)][m_time]
         data.append(x)
 
-    fig_path = Path("figures/alignment/time_series_alignment_crossfile.png")
+    fig_path = Path("figures/alignment/time_series_alignment_fluxes.png")
     plot_time_lines_multiy(
             time_series=data,
             times=[t for i,t in enumerate(dtimes) if m_time[i]],
@@ -49,7 +53,7 @@ if __name__=="__main__":
                 "y_labels":extract_vars,
                 "fig_size":(14,6),
                 "dpi":120,
-                "spine_increment":.03,
+                "spine_increment":.06,
                 "date_format":"%Y-%m-%d %H",
                 "grid":True,
                 "zero_axis":True,
