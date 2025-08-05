@@ -8,16 +8,23 @@ from datetime import timezone as tz
 from emulate_era5_land.plotting import plot_time_lines_multiy
 
 if __name__=="__main__":
-    target_latlon = (34.729, -86.585)
+    #target_latlon = (34.729, -86.585) ## huntsville
+    target_latlon = (33.31, -80.19) ## ian landfall
+
     ## rain event focus
     #time_range = (datetime(2012, 3, 8, 4), datetime(2012,3,8,12))
     ## multi day time period
-    time_range = (datetime(2012,3,8,tzinfo=tz.utc),
-            datetime(2012,3,12,tzinfo=tz.utc))
+    #time_range = (datetime(2012,3,8,tzinfo=tz.utc),
+    #        datetime(2012,3,12,tzinfo=tz.utc))
+    ##
     ## hour zero
     #time_range = (datetime(2011,12,31,tzinfo=tz.utc),
     #        datetime(2012,1,2,tzinfo=tz.utc))
-    timegrid_path = Path("data/timegrids/timegrid_era5_2012.h5")
+    ## hurricane ian
+    time_range = (datetime(2022,9,29,tzinfo=tz.utc),
+            datetime(2022,10,2,tzinfo=tz.utc))
+    #timegrid_path = Path("data/timegrids/timegrid_era5_2012.h5")
+    timegrid_path = Path("data/timegrids/timegrid_era5_2022.h5")
 
     F = h5py.File(timegrid_path, "r")
     dattrs = json.loads(F["data"].attrs["dynamic"])
@@ -32,10 +39,10 @@ if __name__=="__main__":
         t >= time_range[0] and t < time_range[1] for t in dtimes
         ])
     extract_vars = [
-            #"apcp", "tsoil-07", "tsoil-28", ## check rain
-            "lhtfl", "shtfl",
-            "lwnet", "swnet",
-            #"evp", "pevap",
+            "apcp", #"tsoil-07", "tsoil-28", ## check rain
+            #"lhtfl", "shtfl",
+            #"lwnet", "swnet",
+            "evp", "pevap",
             #"dlwrf", "dswrf",
             #"apcp",
             ]
@@ -45,7 +52,7 @@ if __name__=="__main__":
         x = F["/data/dynamic"][:,target_ix,dattrs["flabels"].index(fl)][m_time]
         data.append(x)
 
-    fig_path = Path("figures/alignment/time_series_alignment_fluxes.png")
+    fig_path = Path("figures/alignment/time_series_alignment_hrc-ian.png")
     plot_time_lines_multiy(
             time_series=data,
             times=[t for i,t in enumerate(dtimes) if m_time[i]],

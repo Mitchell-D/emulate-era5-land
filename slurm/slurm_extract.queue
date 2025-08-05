@@ -10,7 +10,7 @@
 
 ### TOTAL processors (number of tasks)
 #SBATCH --ntasks 12
-###SBATCH --ntasks 1
+###SBATCH --ntasks 2
 
 ### total run time estimate (D-HH:MM)
 #SBATCH -t 2-00:00
@@ -26,22 +26,21 @@
 
 ### Ouput files
 ###SBATCH --open-mode=append ### Don't overwrite existing files
-###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_static.out # STDOUT
-###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_static.err # STDERR
-###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_test.out # STDOUT
-###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_test.err # STDERR
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023_new.out # STDOUT
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023_new.err # STDERR
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.out # STDOUT
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_6.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_6.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.err # STDERR
+###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.out # STDOUT
+###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.err # STDERR
 
 cd /rhome/mdodson/emulate-era5-land
 
 #Run code
 set runcmd = /nas/rhome/mdodson/.micromamba/envs/learn-torch/bin/python
 ##${runcmd} -u scripts/extract_static.py
-${runcmd} -u scripts/extract_era5.py
+${runcmd} -u emulate_era5_land/extract_era5.py
+##${runcmd} -u scripts/test_generators.py
 ##${runcmd} -u scripts/get_permutation.py
 ##${runcmd} -u emulate_era5_land/extract_gridstats.py
