@@ -33,4 +33,4 @@ cd /rhome/mdodson/emulate-era5-land
 
 #Run code
 set runcmd = /nas/rhome/mdodson/.micromamba/envs/learn-torch/bin/python
-${runcmd} -u emulate_era5_land/extract_gridstats.py
+${runcmd} -u scripts/eval_gridstats.py

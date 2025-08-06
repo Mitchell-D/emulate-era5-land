@@ -24,7 +24,7 @@ if __name__=="__main__":
     time_range = (datetime(2022,9,29,tzinfo=tz.utc),
             datetime(2022,10,2,tzinfo=tz.utc))
     #timegrid_path = Path("data/timegrids/timegrid_era5_2012.h5")
-    timegrid_path = Path("data/timegrids/timegrid_era5_2022.h5")
+    timegrid_path = Path("/rstor/mdodson/era5/timegrids-test/timegrid_era5_2022.h5")
 
     F = h5py.File(timegrid_path, "r")
     dattrs = json.loads(F["data"].attrs["dynamic"])
@@ -52,7 +52,7 @@ if __name__=="__main__":
         x = F["/data/dynamic"][:,target_ix,dattrs["flabels"].index(fl)][m_time]
         data.append(x)
 
-    fig_path = Path("figures/alignment/time_series_alignment_hrc-ian.png")
+    fig_path = Path("figures/alignment/time_series_alignment_hrc-ian-new.png")
     plot_time_lines_multiy(
             time_series=data,
             times=[t for i,t in enumerate(dtimes) if m_time[i]],

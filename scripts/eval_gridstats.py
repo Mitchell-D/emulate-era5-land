@@ -68,6 +68,7 @@ def plot_gridstats_spatial(gridstat_path, fig_dir:Path, plot_spec_per_feat={},
 
     for i,dl in enumerate(dlabels):
         fig_path = fig_dir.joinpath(f"{gs_path.stem}_spatial_{dl}.png")
+        print(f"plotting {dl}")
         geo_quad_plot(
                 data=[stats_2d[:,:,i,j] for j in range(len(mlabels))],
                 flabels=["minimum","maximum","average","standard deviation"],
@@ -93,17 +94,11 @@ def plot_gridstats_spatial(gridstat_path, fig_dir:Path, plot_spec_per_feat={},
                 )
 if __name__=="__main__":
     data_dir = Path("/rstor/mdodson/era5")
-    tg_dir = data_dir.joinpath("timegrids-new")
-    #static_pkl_path = data_dir.joinpath("static/nldas_static_cropped.pkl")
+    tg_dir = data_dir.joinpath("timegrids")
     gridstat_dir = data_dir.joinpath("gridstats")
     fig_dir = Path("/rhome/mdodson/emulate-era5-land/figures/gridstats")
     era5_info = json.load(Path("data/list_feats_era5.json").open("r"))
     gs_path = gridstat_dir.joinpath("gridstats_era5_2012-2023.h5")
-    with h5py.File(gs_path, "r") as F:
-        dattrs = json.loads(F["data"].attrs["gridstats"])
-        dlabels = dattrs["flabels"]
-        sattrs = json.loads(F["data"].attrs["static"])
-        slabels = sattrs["flabels"]
 
     ## extract the gridstats file from a series of timegrids
     '''
@@ -122,6 +117,20 @@ if __name__=="__main__":
             )
     '''
 
+    ## grab the labels for the plotting method calls below
+    with h5py.File(gs_path, "r") as F:
+        dattrs = json.loads(F["data"].attrs["gridstats"])
+        dlabels = dattrs["flabels"]
+        sattrs = json.loads(F["data"].attrs["static"])
+        slabels = sattrs["flabels"]
+
+    '''
+    for l in dlabels:
+        print([era5_info["hist-bounds"][l][0]]*3+[None],
+                [era5_info["hist-bounds"][l][1]]*3+[None])
+    exit(0)
+    '''
+
     ## plot pixel-wise min/max/mean/stddev per feature
     #'''
     logscale = ["weasd", "apcp"]
@@ -133,7 +142,8 @@ if __name__=="__main__":
                 "vmax":[era5_info["hist-bounds"][l][1]]*3+[None],
                 "title":era5_info["desc-mapping"][l],
                 "cbar_orient":"horizontal",
-                "norm":["linear","log"][l in logscale],
+                "cmap":"nipy_spectral"
+                #"norm":["linear","log"][l in logscale],
                 } for l in dlabels
                 },
             sector_size=32768,

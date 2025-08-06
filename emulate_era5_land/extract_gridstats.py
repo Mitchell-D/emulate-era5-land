@@ -507,25 +507,4 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
     return out_file
 
 if __name__=="__main__":
-    data_dir = Path("/rstor/mdodson/era5")
-    tg_dir = data_dir.joinpath("timegrids")
-    #static_pkl_path = data_dir.joinpath("static/nldas_static_cropped.pkl")
-    gridstat_dir = data_dir.joinpath("gridstats")
-
-    substr = "timegrid_era5"
-    timegrids = sorted([p for p in tg_dir.iterdir() if substr in p.name])
-
-    ## Generate gridstats file over a single region
-    #'''
-    print(timegrids)
-    make_gridstat_hdf5(
-            timegrids=timegrids,
-            out_file=gridstat_dir.joinpath(
-                f"gridstats_era5_2012-2023.h5"),
-            depermute=True,
-            time_sector_size=24*14,
-            space_sector_chunks=16,
-            nworkers=16,
-            debug=True,
-            )
-    #'''
+    pass
