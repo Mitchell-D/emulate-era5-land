@@ -67,6 +67,8 @@ def plot_gridstats_spatial(gridstat_path, fig_dir:Path, plot_spec_per_feat={},
     stats_2d[*ix_valid,...] = spatial_stats
 
     for i,dl in enumerate(dlabels):
+        print(f"{dl} min:{np.nanmin(stats_2d[:,:,i,0]):.2f} " + \
+                f"max:{np.nanmax(stats_2d[:,:,i,1]):.2f}")
         fig_path = fig_dir.joinpath(f"{gs_path.stem}_spatial_{dl}.png")
         print(f"plotting {dl}")
         geo_quad_plot(
@@ -134,16 +136,20 @@ if __name__=="__main__":
     ## plot pixel-wise min/max/mean/stddev per feature
     #'''
     logscale = ["weasd", "apcp"]
+    exclude_bounds = ["weasd", "apcp"]
     plot_gridstats_spatial(
             gridstat_path=gs_path,
             fig_dir=fig_dir,
             plot_spec_per_feat={l:{
-                "vmin":[era5_info["hist-bounds"][l][0]]*3+[None],
-                "vmax":[era5_info["hist-bounds"][l][1]]*3+[None],
+                "vmin":[*[era5_info["hist-bounds"][l][0]]*3,None
+                    ] if l not in exclude_bounds else [None]*4,
+                "vmax":[*[era5_info["hist-bounds"][l][1]]*3,None
+                    ] if l not in exclude_bounds else [None]*4,
+                #"vmax":[era5_info["hist-bounds"][l][1]]*3+[None],
                 "title":era5_info["desc-mapping"][l],
                 "cbar_orient":"horizontal",
-                "cmap":"nipy_spectral"
-                #"norm":["linear","log"][l in logscale],
+                "cmap":"nipy_spectral",
+                "norm":["linear","symlog"][l in logscale],
                 } for l in dlabels
                 },
             sector_size=32768,
