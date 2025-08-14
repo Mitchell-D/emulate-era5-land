@@ -175,8 +175,6 @@ if __name__=="__main__":
             )
     '''
 
-    ## plot the global histograms
-    #'''
     hist_plot_specs = {
             "apcp":{"yscale":"log"},
             #"weasd":{"ylim":(0,2e8)},
@@ -204,6 +202,8 @@ if __name__=="__main__":
             "tsoil-289":{"xlim":(240,340)},
             }
     normalize = True
+    ## plot the global histograms
+    '''
     with h5py.File(gh_path, "r") as F:
         for fk in F["/data/hists"].keys():
             tmp_coords = F[f"/data/hcoords/{fk}"][...]
@@ -220,7 +220,7 @@ if __name__=="__main__":
                     bin_coords=[tmp_coords],
                     plot_spec={
                         "title":f"{lname} (2012-2023)",
-                        "ylabel":"Counts",
+                        "ylabel":"Percent Density",
                         "xlabel":units,
                         "linewidth":3,
                         "cmap":"tab20",
@@ -233,6 +233,61 @@ if __name__=="__main__":
                         **hist_plot_specs.get(fk, {}),
                         },
                     show=False,
-                    fig_path=fig_dir.joinpath(f"gridhist_2012-2023_{fk}.png"),
+                    fig_path=fig_dir.joinpath(
+                        f"gridhist_full_2012-2023_{fk}.png"),
+                    )
+    '''
+
+    ## plot the histograms stratified by static parameter
+    #'''
+    #strat_param = "soilt"
+    #strat_param = "vt-low"
+    strat_param = "vt-high"
+    normalize = True
+    norm_by_global = False
+    with h5py.File(gh_path, "r") as F:
+        for fk in F["/data/hists"].keys():
+            tmp_coords = F[f"/data/hcoords/{fk}"][...]
+            slabels = json.loads(F["data"].attrs["static"])["flabels"]
+            sdata = F["/data/static"][...,slabels.index(strat_param)]
+            full_fhist = F[f"/data/hists/{fk}"][...]
+            hists = []
+            labels = []
+            for st in np.unique(sdata.astype(int)):
+                tmp_hist = np.sum(full_fhist[sdata==st], axis=0)
+                print(f"{fk} {st}: {np.median(tmp_hist)} {np.amax(tmp_hist)}")
+                if normalize:
+                    tmp_hist = tmp_hist.astype(np.float64)
+                    if norm_by_global:
+                        tmp_hist = tmp_hist / np.sum(full_fhist)
+                    else:
+                        tmp_hist = tmp_hist / np.sum(tmp_hist)
+                    tmp_hist[tmp_hist==0] = np.nan
+                hists.append(tmp_hist)
+                labels.append(
+                        info_era5["static-classes"][strat_param][str(st)])
+            lname = info_era5["desc-mapping"][fk]
+            units = info_era5["units"]["dynamic"][fk]
+            plot_hists(
+                    counts=hists,
+                    labels=labels,
+                    bin_coords=[tmp_coords for i in range(len(hists))],
+                    plot_spec={
+                        "title":f"{lname} by {strat_param} (2012-2023)",
+                        "ylabel":"Percent Density",
+                        "xlabel":units,
+                        "linewidth":3,
+                        "cmap":"tab20",
+                        "title_fontsize":24,
+                        "label_fontsize":22,
+                        "legend_fontsie":24,
+                        "tick_fontsize":20,
+                        "hlines":[(0,{"color":"lightgrey","linewidth":2})],
+                        "vlines":[(0,{"color":"lightgrey","linewidth":2})],
+                        **hist_plot_specs.get(fk, {}),
+                        },
+                    show=False,
+                    fig_path=fig_dir.joinpath(
+                        f"gridhist_{strat_param}_2012-2023_{fk}.png"),
                     )
     #'''
