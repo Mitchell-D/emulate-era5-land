@@ -15,7 +15,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from cartopy.mpl.ticker import LatitudeFormatter,LongitudeFormatter
 
-plt.rcParams.update({ "text.usetex": True, })
+#plt.rcParams.update({ "text.usetex": True, })
 
 def geo_quad_plot(data, flabels:list, latitude, longitude,
         plot_spec={}, show=False, fig_path=None):
@@ -789,7 +789,7 @@ def plot_nested_bars(data_dict:dict, labels:dict={}, plot_error_bars=False,
         fig.savefig(fig_path.as_posix(),bbox_inches="tight",dpi=ps.get("dpi"))
     return
 
-def plot_hists(counts:list, labels:list, bin_bounds:list, normalize=False,
+def plot_hists(counts:list, labels:list, bin_coords:np.array, normalize=False,
         line_colors:list=None, plot_spec:dict={}, show=False, fig_path=None):
     """
     Plot one or more histograms on a single pane
@@ -810,21 +810,38 @@ def plot_hists(counts:list, labels:list, bin_bounds:list, normalize=False,
     ps.update(plot_spec)
     fig,ax = plt.subplots()
     cm = matplotlib.cm.get_cmap(ps.get("cmap"), len(counts))
-    for i,(carr,label,(bmin,bmax)) in enumerate(zip(counts,labels,bin_bounds)):
-        assert len(carr.shape) == 1, f"counts array must be 1D, {carr.shape}"
-        bins = (np.arange(carr.size)+.5)/carr.size * (bmax-bmin) + bmin
+
+    if not ps.get("hlines") is None:
+        for hl in ps.get("hlines"):
+            hlparams = {"color":"black", "linewidth":ps.get("linewidth")}
+            if isinstance(hl, (list,tuple)) and len(hl)==2:
+                hl,hlpnew = hl
+                hlparams.update(hlpnew)
+            ax.axhline(hl, **hlparams)
+    if not ps.get("vlines") is None:
+        for vl in ps.get("vlines"):
+            vlparams = {"color":"black", "linewidth":ps.get("linewidth")}
+            if isinstance(vl, (list,tuple)) and len(vl)==2:
+                vl,vlpnew = vl
+                vlparams.update(vlpnew)
+            ax.axvline(vl, **vlparams)
+
+    for i,(carr,label,bins) in enumerate(zip(counts,labels,bin_coords)):
+        assert len(carr.shape) == 1, f"counts array must be 1D, {carr.shape=}"
+        #bins = (np.arange(carr.size)+.5)/carr.size * (bmax-bmin) + bmin
         color = cm(i) if not line_colors else line_colors[i]
         if normalize:
             carr = carr / np.sum(carr)
         ax.plot(bins, carr, label=label, linewidth=ps.get("linewidth"),
                 color=color, alpha=ps.get("line_opacity"))
 
-    ax.set_xlabel(ps.get("xlabel"), fontsize=ps.get("label_fontsize"))
-    ax.set_ylabel(ps.get("ylabel"), fontsize=ps.get("label_fontsize"))
     if not ps.get("ylim") is None:
         ax.set_ylim(*ps.get("ylim"))
     if not ps.get("xlim") is None:
         ax.set_xlim(*ps.get("xlim"))
+
+    ax.set_xlabel(ps.get("xlabel"), fontsize=ps.get("label_fontsize"))
+    ax.set_ylabel(ps.get("ylabel"), fontsize=ps.get("label_fontsize"))
     ax.set_title(ps.get("title"), fontsize=ps.get("title_fontsize"))
     ax.legend(ncol=ps.get("legend_ncols"), fontsize=ps.get("legend_fontsize"))
     ax.set_xscale(ps.get("xscale"))

@@ -14,8 +14,9 @@ from time import perf_counter
 from pathlib import Path
 
 from emulate_era5_land.extract_gridstats import make_gridstat_hdf5
+from emulate_era5_land.extract_gridstats import make_gridhist_hdf5
 from emulate_era5_land.helpers import sector_slices
-from emulate_era5_land.plotting import geo_quad_plot
+from emulate_era5_land.plotting import geo_quad_plot,plot_hists
 
 def plot_gridstats_spatial(gridstat_path, fig_dir:Path, plot_spec_per_feat={},
         sector_size=32768, debug=False):
@@ -101,19 +102,43 @@ if __name__=="__main__":
     fig_dir = Path("/rhome/mdodson/emulate-era5-land/figures/gridstats")
     era5_info = json.load(Path("data/list_feats_era5.json").open("r"))
     gs_path = gridstat_dir.joinpath("gridstats_era5_2012-2023.h5")
+    gh_path = gridstat_dir.joinpath("gridhists_era5_2012-2023.h5")
+    info_era5 = json.load(Path("data/list_feats_era5.json").open("r"))
 
-    ## extract the gridstats file from a series of timegrids
-    '''
-    ## Generate gridstats file over a single region
+    ## select timegrids for the gridstat/gridhist files
     substr = "timegrid_era5"
     timegrids = sorted([p for p in tg_dir.iterdir() if substr in p.name])
     print(timegrids)
+
+    ## generate the gridstat hdf5 from timegrid hdf5s
+    '''
     make_gridstat_hdf5(
             timegrids=timegrids,
             out_file=gs_path,
             depermute=True,
             time_sector_size=24*14,
             space_sector_chunks=16,
+            nworkers=16,
+            debug=True,
+            )
+    '''
+
+    ## generate the gridhist hdf5 from timegrid hdf5s
+    '''
+    hist_bounds = info_era5["hist-bounds"]
+    make_gridhist_hdf5(
+            timegrids=timegrids,
+            out_file=gh_path,
+            depermute=True,
+            time_sector_size=24*14,
+            space_sector_chunks=16,
+            hist_resolution={
+                **{fl:512 for fl in hist_bounds.keys()},
+                "weasd":2048,
+                "shtfl":1024,
+                "lhtfl":1024,
+                },
+            hist_bounds=hist_bounds,
             nworkers=16,
             debug=True,
             )
@@ -126,15 +151,8 @@ if __name__=="__main__":
         sattrs = json.loads(F["data"].attrs["static"])
         slabels = sattrs["flabels"]
 
-    '''
-    for l in dlabels:
-        print([era5_info["hist-bounds"][l][0]]*3+[None],
-                [era5_info["hist-bounds"][l][1]]*3+[None])
-    exit(0)
-    '''
-
     ## plot pixel-wise min/max/mean/stddev per feature
-    #'''
+    '''
     logscale = ["weasd", "apcp"]
     exclude_bounds = ["weasd", "apcp"]
     plot_gridstats_spatial(
@@ -155,4 +173,66 @@ if __name__=="__main__":
             sector_size=32768,
             debug=True,
             )
+    '''
+
+    ## plot the global histograms
+    #'''
+    hist_plot_specs = {
+            "apcp":{"yscale":"log"},
+            #"weasd":{"ylim":(0,2e8)},
+            #"weasd":{"ylim":(0,.05)},
+            "weasd":{"yscale":"log"},
+            #"dswrf":{"ylim":(0,2e8)},
+            "dswrf":{"ylim":(0,.01)},
+            "evp":{"yscale":"log"},
+            #"lai-high":{"ylim":(0,7e8)},
+            "lai-high":{"ylim":(0,.01)},
+            #"lai-low":{"ylim":(0,7e8)},
+            "lai-low":{"ylim":(0,.1)},
+            "lhtfl":{"yscale":"log"},
+            "pevap":{"yscale":"log", "ylim":(1e-11,1)},
+            "shtfl":{"yscale":"log"},
+            #"swnet":{"ylim":(0,2e8)},
+            "swnet":{"ylim":(0,.01)},
+            "pres":{"xlim":(60000,120000)},
+            "dwpt":{"xlim":(220,320)},
+            "tmp":{"xlim":(220,320)},
+            "tskin":{"xlim":(220,350)},
+            "tsoil-07":{"xlim":(240,340)},
+            "tsoil-28":{"xlim":(240,340)},
+            "tsoil-100":{"xlim":(240,340)},
+            "tsoil-289":{"xlim":(240,340)},
+            }
+    normalize = True
+    with h5py.File(gh_path, "r") as F:
+        for fk in F["/data/hists"].keys():
+            tmp_coords = F[f"/data/hcoords/{fk}"][...]
+            tmp_hist = np.sum(F[f"/data/hists/{fk}"][...], axis=0)
+            print(f"{fk}: {np.median(tmp_hist)} {np.amax(tmp_hist)}")
+            if normalize:
+                tmp_hist = tmp_hist.astype(np.float64) / np.sum(tmp_hist)
+                tmp_hist[tmp_hist==0] = np.nan
+            lname = info_era5["desc-mapping"][fk]
+            units = info_era5["units"]["dynamic"][fk]
+            plot_hists(
+                    counts=[tmp_hist],
+                    labels=[f"{fk} {units}"],
+                    bin_coords=[tmp_coords],
+                    plot_spec={
+                        "title":f"{lname} (2012-2023)",
+                        "ylabel":"Counts",
+                        "xlabel":units,
+                        "linewidth":3,
+                        "cmap":"tab20",
+                        "title_fontsize":30,
+                        "label_fontsize":22,
+                        "legend_fontsie":26,
+                        "tick_fontsize":24,
+                        "hlines":[(0,{"color":"lightgrey","linewidth":2})],
+                        "vlines":[(0,{"color":"lightgrey","linewidth":2})],
+                        **hist_plot_specs.get(fk, {}),
+                        },
+                    show=False,
+                    fig_path=fig_dir.joinpath(f"gridhist_2012-2023_{fk}.png"),
+                    )
     #'''

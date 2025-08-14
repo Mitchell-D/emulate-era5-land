@@ -24,6 +24,9 @@ def _mp_get_gs_varsum(args):
 def _mp_get_gs_mmsc(args):
     return args,_get_gs_mmsc(**args)
 
+def _mp_get_ghist(args):
+    return args,_get_ghist(**args)
+
 def _get_gs_varsum(timegrid:Path, means:np.array, spatial_slice=None,
         time_sector_size=None, derived_feats_serial:list=[]):
     """
@@ -233,6 +236,85 @@ def _get_gs_mmsc(timegrid:Path, time_sector_size=None, spatial_slice=None,
     #    mms = mms[:,:,inv_perm,:,:]
     tg_open.close()
     return (counts,mms)
+
+def _get_ghist(timegrid:Path, spatial_slice:slice, time_sector_size:int,
+        derived_feats_serial:dict, hist_bounds:dict, hist_resolution:dict,
+        hist_dtype:str):
+    """
+    Calculate a pixel-wise counts histogram for each feature in the provided
+    timegrid within the provided slice of pixels along the spatial axis.
+    """
+    tg_open = h5py.File(timegrid,"r",rdcc_nbytes=128*1024**2,rdcc_nslots=256)
+
+    ## extract the labels, static, dynamic, and permutation data
+    tg_shape = tg_open["/data/dynamic"].shape
+    tg_dlabels = json.loads(
+            tg_open["data"].attrs["dynamic"])["flabels"]
+    tg_slabels = json.loads(
+            tg_open["data"].attrs["static"])["flabels"]
+    tg_static = tg_open["/data/static"][...]
+    tg_dynamic = tg_open["/data/dynamic"]
+    all_feats = [df[0] for df in derived_feats_serial] + list(tg_dlabels)
+
+    ## determine sector slices along time axis
+    dix = time_sector_size
+    tslices = [slice(int(ix),int(ix+dix))
+            for ix in np.arange(tg_shape[0]//dix)*dix]
+    if rix := tg_shape[0] % dix:
+        tslices.append(slice(int(tslices[-1].stop), int(tslices[-1].stop+rix)))
+
+    ## get the mappings and functions for extracting stored and derived feats.
+    sfix,drv_info,_ = _parse_feat_idxs(
+            out_feats=all_feats,
+            src_feats=list(tg_dlabels),
+            static_feats=list(tg_slabels),
+            derived_feats=dict(derived_feats_serial),
+            )
+
+    ## go ahead and extract the full year for this spatial area and close file
+    tg_dynamic = tg_dynamic[:,spatial_slice]
+    tg_static = tg_static[spatial_slice]
+    tg_open.close()
+
+    ## construct a (M,T) counts array and (M,T,P,Fd,3) array for
+    ## (min, max, sum) per combination of (month, ToD, pixel, feature)
+    if spatial_slice is None:
+        spatial_slice = slice(0,tg_shape[1])
+    sslice_size = spatial_slice.stop-spatial_slice.start
+
+    hists = {fl:np.zeros((sslice_size, hist_resolution[fl]), dtype=hist_dtype)
+            for fl in all_feats}
+    hcoords = {fl:None for fl in all_feats}
+    for slc in tslices:
+        tinit = perf_counter()
+        ## evaluate derived features and reorder stored feats as requested.
+        tmpx = _calc_feat_array(
+                src_array=tg_dynamic[slc], ## (T, P, Fd)
+                static_array=tg_static, ## (P, Fs)
+                stored_feat_idxs=sfix,
+                derived_data=drv_info,
+                )
+        assert np.all(np.isfinite(tmpx)),(timegrid.name,spatial_slice,slc)
+
+        for fix,fl in enumerate(all_feats):
+            ## calculate histogram indeces based on value bins
+            hmin,hmax = hist_bounds[fl]
+            ## clip between inclusive bounds [hmin,hmax] and scale to min at 0
+            hixs = np.clip(tmpx[...,fix], hmin, hmax) - hmin
+            ## scale so max value terminates at end of last bin
+            hixs = hixs * (hist_resolution[fl]/(hmax-hmin))
+            hixs = np.clip(np.round(hixs),0,hist_resolution[fl]-1)
+            hixs = hixs.astype(int)
+            for pix in range(tmpx.shape[1]):
+                for tix in range(tmpx.shape[0]):
+                    hists[fl][pix,hixs[tix,pix]] += 1
+            if hcoords[fl] is None:
+                hcoords[fl] = np.linspace(hmin,hmax,hist_resolution[fl]+1)[:-1]
+
+        gc.collect()
+        print(timegrid.name, spatial_slice, slc, f"{perf_counter()-tinit:.3f}")
+    tg_open.close()
+    return hcoords,hists
 
 def par_var(n_a, mean_a, m2_a, n_b, mean_b, m2_b):
     """
@@ -502,6 +584,199 @@ def make_gridstat_hdf5(timegrids:list, out_file:Path, depermute=True,
             gc.collect()
     else:
         G[:,:,:,:,3] = varsum_total
+    F.flush()
+    F.close()
+    return out_file
+
+def make_gridhist_hdf5(timegrids:list, out_file:Path, depermute=True,
+        time_sector_size=None, space_sector_chunks=1, hist_resolution=512,
+        hist_bounds={}, hist_dtype="u4", derived_feats_serial:list=[],
+        nworkers=1, debug=False):
+    """
+    Calculate a pixel-wise global histogram of counts for each feature within
+    the provided bounds, and store the results in a new hdf5 dataset associated
+    with each feat.
+
+    The subsequent gridhist array has shape (P,H) corresponding to axes for
+    P spatial pixels, and H hist bins.
+
+    :@param timegrids: List of timegrids that cover the same spatial domain,
+        which will all be incorporated into the pixelwise monthly calculations.
+    :@param out_file: File where output hdf5 will be generated
+    :@param depermute: If True, use the permutation stored in each timegrid
+        file to reorder the spatial indeces into their original positions.
+    :@param time_sector_size: Number of timesteps to extract per iteration
+    :@param space_sector_chunks: Number of spatial chunks (wrt the timegrid
+        chunk size) to pass to each worker for extraction.
+    :@param hist_resolution: Number of value bins between each feature's
+        hist_bounds
+    :@param derived_feats_serial: Provide a dict mapping NEW feature labels to
+        a 3-tuple (dynamic_args, static_args, lambda_str) where the args are
+        each tuples of existing dynamic/static labels, and lambda_str contains
+        a string-encoded function taking 2 arguments (dynamic,static) of tuples
+        containing the corresponding arrays, and returns the subsequent new
+        feature after calculating it based on the arguments. These will be
+        invoked if the new derived feature label appears in one of the window,
+        horizon, or pred feature lists.
+    """
+    ## extract shape, labels, permutation, static data, and valid mask and
+    ## verify that the timegrids are uniform where they need to be.
+    tg_shape = None
+    for tg in timegrids:
+        ## 128MB cache with 256 slots; each chunk is a little over 1/3 MB
+        tg_open = h5py.File(tg, "r", rdcc_nbytes=128*1024**2, rdcc_nslots=256)
+        if tg_shape is None:
+            tg_shape = tg_open["/data/dynamic"].shape
+            tg_chunks = tg_open["/data/dynamic"].chunks
+            ## collect dynamic and static feature labels
+            tg_dlabels = json.loads(
+                    tg_open["data"].attrs["dynamic"])["flabels"]
+            tg_slabels = json.loads(
+                    tg_open["data"].attrs["static"])["flabels"]
+            tg_static = tg_open["/data/static"][...]
+            tg_latlon = tg_open["/data/latlon"][...]
+            tg_perm = tg_open["/data/permutation"][...].astype(int)
+            tg_mask = tg_open["/data/mask"][...]
+            if depermute:
+                tg_static = tg_static[tg_perm[1]] ## invert stored permutation
+        else:
+            assert tg_shape[1:] == tg_open["/data/dynamic"].shape[1:], \
+                    "Timegrid grid shapes & feature count must be uniform"
+            assert tg_static.shape == tg_open["/data/static"].shape, \
+                    "Timegrid grid shapes & feature count must be uniform"
+            assert np.all(tg_mask == tg_open["/data/mask"][...]), \
+                    "Timegrid 2d valid mask must be uniform"
+            assert np.all(tg_latlon == tg_open["/data/latlon"][...]), \
+                    "Timegrid 2d latlon arrays must be uniform"
+            assert tuple(tg_dlabels) == tuple(
+                    json.loads(tg_open["data"].attrs["dynamic"])["flabels"])
+            assert np.all(tg_perm == tg_open["/data/permutation"][...])
+        tg_open.close()
+
+    ## collect all feature labels, whether stored  or derived.
+    ## process derived features first since they are most likely to fail
+    all_flabels =  list(dict(derived_feats_serial).keys()) + tg_dlabels
+    stats_shape = (12, 24, tg_shape[1], len(all_flabels), 4)
+
+    ## if res not provided for each feature, default to 512 bins
+    if isinstance(hist_resolution, dict):
+        hist_resolution = {fl:hist_resolution.get(fl,512)
+                for fl in all_flabels}
+    elif isinstance(hist_resolution, int):
+        hist_resolution = {fl:hist_resolution for fl in all_flabels}
+    else:
+        raise ValueError(f"hist_resolution must be an int or dict!")
+    for fl in all_flabels:
+        assert fl in hist_bounds.keys(), f"Must provide hist bounds for {fl}"
+    F = h5py.File(name=out_file.as_posix(), mode="w-", rdcc_nbytes=256*1024**2)
+    F.create_group("/data/hists")
+    F.create_group("/data/hcoords")
+    h5_feat_dss = {}
+    h5_feat_coord_dss = {}
+    for fl in all_flabels:
+        ## each feature's hist is uint32 with shape (P,H).
+        h5_feat_dss[fl] = F.create_dataset(
+                name=f"/data/hists/{fl}",
+                shape=(tg_shape[1], hist_resolution[fl]),
+                maxshape=(tg_shape[1], hist_resolution[fl]),
+                chunks=(1024, hist_resolution[fl]),
+                compression="gzip",
+                dtype=hist_dtype,
+                )
+        h5_feat_coord_dss[fl] = F.create_dataset(
+                name=f"/data/hcoords/{fl}",
+                shape=(hist_resolution[fl],),
+                maxshape=(hist_resolution[fl],),
+                dtype="f8",
+                )
+    ## Create and load the static datasets, permutations, and 2d valid mask
+    L = F.create_dataset(
+            name="/data/latlon",
+            shape=tg_latlon.shape,
+            dtype="f8",
+            )
+    L[...] = tg_latlon
+    S = F.create_dataset(
+            name="/data/static",
+            shape=tg_static.shape,
+            dtype="f8",
+            )
+    S[...] = tg_static
+    P = F.create_dataset(
+            name="/data/permutation",
+            shape=tg_perm.shape,
+            dtype="u4",
+            )
+    P[...] = tg_perm
+    M = F.create_dataset(
+            name="/data/mask",
+            shape=tg_mask.shape,
+            dtype="b",
+            )
+    M[...] = tg_mask
+
+    ## attempt to follow CFD convention even though the api isn't finished
+    F["data"].attrs["hists"] = json.dumps({
+        "flabels":all_flabels,
+        "clabels":("space","bins"),
+        })
+    F["data"].attrs["hcoords"] = json.dumps({
+        "flabels":all_flabels,
+        "clabels":("bins"),
+        })
+    F["data"].attrs["static"] = json.dumps({
+        "flabels":tg_slabels,
+        "clabels":("space",),
+        })
+    F["data"].attrs["permutation"] = json.dumps({
+        "flabels":("fwd","inv"),
+        "clabels":("space",),
+        })
+    F["data"].attrs["mask"] = json.dumps({
+        "flabels":tuple(),
+        "clabels":("lat","lon"),
+        })
+    F["data"].attrs["meta"] = json.dumps({
+        "derived_feats":json.dumps(derived_feats_serial),
+        "timegrids":json.dumps([p.name for p in timegrids]),
+        "hist_bounds":hist_bounds,
+        "hist_resolution":hist_resolution,
+        })
+
+    ss_size = tg_chunks[1] * space_sector_chunks
+    ss_count = tg_shape[1] // ss_size + bool(tg_shape[1] % ss_size)
+    ss_0 = np.arange(ss_count) * ss_size
+    ss_f = np.r_[ss_0[1:], tg_shape[1]]
+    ss_slices = [slice(int(ix0),int(ixf)) for ix0,ixf in zip(ss_0, ss_f)]
+    print(f"{np.count_nonzero(tg_mask) = }")
+
+    args = [{
+        "timegrid":tg,
+        "spatial_slice":ss,
+        #"depermute":depermute,
+        "time_sector_size":time_sector_size,
+        "derived_feats_serial":derived_feats_serial,
+        "hist_bounds":hist_bounds,
+        "hist_resolution":hist_resolution,
+        "hist_dtype":hist_dtype,
+        } for tg in timegrids for ss in ss_slices]
+
+    acquired_coords = False
+    with Pool(nworkers) as pool:
+        for a,(hcoords,hists) in pool.imap_unordered(_mp_get_ghist, args):
+            slc = a["spatial_slice"]
+            if not acquired_coords:
+                for hk in hcoords.keys():
+                    h5_feat_coord_dss[hk][...] = hcoords[hk]
+            for hk in hists.keys():
+                h5_feat_dss[hk][slc,:] += hists[hk]
+
+    if depermute:
+        ## loop over (month,time) in attempt to avoid memory overflow. awkward.
+        for hk in h5_feat_dss.keys():
+            print(f"Depermuting {hk}")
+            tmpx = h5_feat_dss[hk][:,:]
+            h5_feat_dss[hk] = tmpx[tg_perm[1],:]
     F.flush()
     F.close()
     return out_file
