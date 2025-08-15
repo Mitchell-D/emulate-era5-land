@@ -135,6 +135,7 @@
             "20":"water-land"
         },
         "soilt":{
+            "0":"none",
             "1":"coarse",
             "2":"medium",
             "3":"medium-fine",
@@ -142,6 +143,64 @@
             "5":"very-fine",
             "6":"organic",
             "7":"tropical-organic"
+        }
+    },
+    "static-colors":{
+        "vt-low":{
+            "0":"black",
+            "1":"xkcd:pear",
+            "2":"xkcd:light yellow",
+            "3":"xkcd:navy green",
+            "4":"xkcd:baby blue",
+            "5":"xkcd:grass green",
+            "6":"xkcd:turquoise green",
+            "7":"xkcd:dark yellow",
+            "8":"xkcd:yellowish orange",
+            "9":"xkcd:light grey blue",
+            "10":"xkcd:kiwi",
+            "11":"xkcd:sunflower",
+            "12":"xkcd:greyish",
+            "13":"xkcd:camouflage green",
+            "14":"xkcd:lightish blue",
+            "15":"xkcd:royal blue",
+            "16":"xkcd:dark teal",
+            "17":"xkcd:blue green",
+            "18":"xkcd:pinkish",
+            "19":"xkcd:chestnut",
+            "20":"xkcd:bluish"
+        },
+        "vt-high":{
+            "0":"black",
+            "1":"xkcd:pear",
+            "2":"xkcd:light yellow",
+            "3":"xkcd:navy green",
+            "4":"xkcd:baby blue",
+            "5":"xkcd:grass green",
+            "6":"xkcd:turquoise green",
+            "7":"xkcd:dark yellow",
+            "8":"xkcd:yellowish orange",
+            "9":"xkcd:light grey blue",
+            "10":"xkcd:kiwi",
+            "11":"xkcd:sunflower",
+            "12":"xkcd:greyish",
+            "13":"xkcd:camouflage green",
+            "14":"xkcd:lightish blue",
+            "15":"xkcd:royal blue",
+            "16":"xkcd:dark teal",
+            "17":"xkcd:blue green",
+            "18":"xkcd:pinkish",
+            "19":"xkcd:chestnut",
+            "20":"xkcd:bluish"
+        },
+        "soilt":{
+            "0":"black",
+            "1":"xkcd:yellowish",
+            "2":"xkcd:apricot",
+            "3":"xkcd:reddish",
+            "4":"xkcd:purplish",
+            "5":"xkcd:dusty blue",
+            "6":"xkcd:dirt",
+            "7":"xkcd:swamp green"
         }
     },
     "desc-mapping":{

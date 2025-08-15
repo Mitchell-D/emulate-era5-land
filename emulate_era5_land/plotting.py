@@ -526,25 +526,15 @@ def plot_time_lines_multiy(time_series, times, plot_spec={},
         fig.savefig(fig_path, bbox_inches="tight", dpi=plot_spec.get("dpi"))
     plt.close()
 
-def plot_static_error(static_error, fig_path:Path, plot_spec={}):
-    """
-    Plot error rates wrt unique combination of vegetation and soil  parameters
-    """
+def plot_combo_matrix(matrix, fig_path:Path, plot_spec={}):
+    """ """
     old_ps = {"cmap":"magma", "norm":"linear", "xlabel":"Soil type",
             "ylabel":"Surface type"}
     old_ps.update(plot_spec)
     plot_spec = old_ps
 
-    soils = ["other", "sand", "loamy-sand", "sandy-loam", "silty-loam", "silt",
-            "loam", "sandy-clay-loam", "silty-clay-loam", "clay-loam",
-            "sandy-clay", "silty-clay", "clay"]
-    vegs = ["water", "evergreen-needleleaf", "evergreen_broadleaf",
-            "deciduous-needleleaf", "deciduous-broadleaf", "mixed-cover",
-            "woodland", "wooded-grassland", "closed-shrubland",
-            "open-shrubland", "grassland", "cropland", "bare", "urban"]
-
     fig,ax = plt.subplots()
-    cb = ax.imshow(static_error, cmap=plot_spec.get("cmap"),
+    cb = ax.imshow(matrix, cmap=plot_spec.get("cmap"),
             vmax=plot_spec.get("vmax"), norm=plot_spec.get("norm"))
     fig.colorbar(cb)
     ax.set_xlabel(plot_spec.get("xlabel"),
@@ -555,8 +545,14 @@ def plot_static_error(static_error, fig_path:Path, plot_spec={}):
             fontsize=plot_spec.get("title_size"))
 
     # Adding labels to the matrix
-    ax.set_yticks(range(len(vegs)), vegs)
-    ax.set_xticks(range(len(soils)), soils, rotation=45, ha='right',)
+    if not plot_spec.get("yticks") is None:
+        assert len(plot_spec.get("yticks"))==matrix.shape[0]
+        ax.set_yticks(range(matrix.shape[0]), plot_spec.get("yticks"),
+                **plot_spec.get("ytick_params", {}))
+    if not plot_spec.get("xticks") is None:
+        assert len(plot_spec.get("xticks"))==matrix.shape[1]
+        ax.set_xticks(range(matrix.shape[1]), plot_spec.get("xticks"),
+                **plot_spec.get("xtick_params", {"rotation":45, "ha":"right"}))
     fig.savefig(fig_path, bbox_inches="tight")
     plt.close()
     return
