@@ -497,8 +497,7 @@ def plot_time_lines_multiy(time_series, times, plot_spec={},
         if y_ranges[i] is not None:
             ax.set_ylim(y_ranges[i])
 
-    if ps.get("grid"):
-        host.grid()
+    host.grid(ps.get("grid", False), **ps.get("grid_kwargs", {}))
     host.set_xlabel(ps.get("x_label", "Time"), fontsize=ps.get("label_size"))
     host.xaxis.set_major_formatter(mdates.DateFormatter(ps.get("date_format")))
     host.tick_params(axis="x", rotation=ps.get("xtick_rotation"))

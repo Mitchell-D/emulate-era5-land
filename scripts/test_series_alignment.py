@@ -74,31 +74,30 @@ if __name__=="__main__":
     print(f"Generated {fig_path.as_posix()}")
     '''
 
-    ## seek a particular value within a bounding box
-    '''
-    bbox = ((35.08,36.52),(-87.14,-84.21))
-    '''
-
     ## extract a time range for specific pixels
     trange_coord = [
-            ((dttime(2015,5,15),dttime(2015,5,17)),(28.8,-98.1)), ## 92776
-            ((dttime(2013,5,20),dttime(2013,5,22)),(33.3,-96.0)), ## 79104
-            ((dttime(2016,5,25),dttime(2016,5,27)),(30.0,-96.5)), ## 90220
-            ((dttime(2014,6,22),dttime(2014,6,24)),(25.2,-100.5)), ## 98327
-            ((dttime(2015,6,22),dttime(2015,6,24)),(39.5,-82.6)), ## 51951
-            ((dttime(2023,7,12),dttime(2023,7,14)),(37.0,-94.6)), ## 63422
+            #((dttime(2015,5,15),dttime(2015,5,17)),(28.8,-98.1)), ## 92776
+            #((dttime(2013,5,20),dttime(2013,5,22)),(33.3,-96.0)), ## 79104
+            #((dttime(2016,5,25),dttime(2016,5,27)),(30.0,-96.5)), ## 90220
+            #((dttime(2014,6,22),dttime(2014,6,24)),(25.2,-100.5)), ## 98327
+            #((dttime(2015,6,22),dttime(2015,6,24)),(39.5,-82.6)), ## 51951
+            #((dttime(2023,7,12),dttime(2023,7,14)),(37.0,-94.6)), ## 63422
+            ((dttime(2021,3,15),dttime(2021,3,15,12)),(34.56,-87.06))
             ]
     extract_vars = [
             "apcp", #"tsoil-07", "tsoil-28", ## check rain
-            "evp", #"pevap",
+            "vsm-07","vsm-28",
+            #"evp", #"pevap",
             "lhtfl", "shtfl",
             #"lwnet", "swnet",
             #"dlwrf", "dswrf",
             #"apcp",
             ]
+    plot_diff = ["vsm-07", "vsm-28"]
     tg_dir = Path("/rstor/mdodson/era5/timegrids")
-    fig_dir = Path("figures/apcp-anomaly")
+    fig_dir = Path("figures/alignment")
 
+    fig_path = "alignment_apcp-vsm_{stime}.png"
     for (tt0,ttf),(tlat,tlon) in trange_coord:
         tt0 = tt0.replace(tzinfo=tz.utc)
         ttf = ttf.replace(tzinfo=tz.utc)
@@ -117,13 +116,18 @@ if __name__=="__main__":
         for fl in extract_vars:
             fix = dattrs["flabels"].index(fl)
             x = F["/data/dynamic"][m_time,six,fix]
+            if fl in plot_diff:
+                x = np.diff(x, axis=0)
+                x = np.concatenate([np.full(x.shape, np.nan)[:1], x], axis=0)
             data.append(x)
 
+        plot_times = [t for i,t in enumerate(dtimes) if m_time[i]]
+
         fig_path = fig_dir.joinpath(
-                f"anomaly_apcp_{tt0.strftime('%Y%m%d')}.png")
+                fig_path.format(stime=tt0.strftime('%Y%m%d')))
         plot_time_lines_multiy(
                 time_series=data,
-                times=[t for i,t in enumerate(dtimes) if m_time[i]],
+                times=plot_times,
                 plot_spec={
                     "y_labels":extract_vars,
                     "fig_size":(14,6),
@@ -131,6 +135,7 @@ if __name__=="__main__":
                     "spine_increment":.06,
                     "date_format":"%Y-%m-%d %H",
                     "grid":True,
+                    "grid_kwargs":{"which":"major"},
                     "zero_axis":True,
                     },
                 show=False,
