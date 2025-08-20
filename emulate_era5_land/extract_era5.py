@@ -226,11 +226,12 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                         )
                 L[...,0] = static_array[...,static_labels.index("lat")]
                 L[...,1] = static_array[...,static_labels.index("lon")]
+                ## allow for arbitrary extension along feature axis
                 static_array = static_array[m_valid]
                 S = H5F.create_dataset(
                         name="/data/static",
                         shape=static_array.shape,
-                        maxshape=static_array.shape,
+                        maxshape=(*static_array.shape[:-1],None),
                         dtype="f8",
                         )
                 S[...] = static_array[permutation]

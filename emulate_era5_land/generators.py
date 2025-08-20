@@ -9,12 +9,12 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
     PyTorch IterableDataset implementation with the ability to multiprocess
     over sparse sampling of 1d time series over
     """
-    def __init__(self, timegrids:list, target_feats, window_feats,
-            horizon_feats, static_feats, static_int_feats, derived_feats={},
-            static_embed_sizes={}, window_size=24, horizon_size=24,
+    def __init__(self, timegrids:list, window_feats, horizon_feats,
+            target_feats, static_feats, static_int_feats, derived_feats={},
+            static_embed_maps={}, window_size=24, horizon_size=24,
             dynamic_norm_coeffs={}, static_norm_coeffs={}, shuffle=True,
             seed=None, sample_across_files=True, sample_cutoff=1,
-            sample_under_cutoff=True, sample_separation=1, shuffle_offset=True,
+            sample_under_cutoff=True, sample_separation=1, random_offset=True,
             chunk_pool_count=4, buf_size_mb=1024, buf_slots=128, buf_policy=0,
             debug=False):
         """
@@ -36,8 +36,9 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             returns the subsequent new feature after calculating it based on
             the arguments. These will be invoked if the new derived feature
             label appears in one of the feature lists.
-        :@param static_embed_sizes: Dict mapping a stored static feature label
-            to an integer referring to the size of its embedding vector.
+        :@param static_embed_maps: Dict mapping a stored static feature label
+            to a list of possible integer values. The order of the listed
+            values determines the one-hot encoding vector position of each.
         :@param window_size: Number of input steps prior to the first
             prediction step, used to initialize the model.
         :@param horizon_size: Number of covariate input and prediction steps.
@@ -62,7 +63,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             is False, the final 30% will be selected.
         :@param sample_separation: Number of timesteps between sample
             extractions for any particular spatial pixel
-        :@param shuffle_offset: If True, each spatial pixel is assigned a
+        :@param random_offset: If True, each spatial pixel is assigned a
             random initial time step offset between 0 and sample_separation,
             which prevents overfitting to certain sequences/diurnal patterns.
         :@param chunk_pool_count: Sets the number of chunks that are
@@ -85,13 +86,22 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
         self._tgs_ordered = timegrids
         self._cpc = chunk_pool_count
         self._rng = None
+        self._shuffle = shuffle
+        self._roffset = random_offset
+        self._smp_sep = sample_separation
 
         self._w_feats = window_feats
         self._h_feats = horizon_feats
         self._s_feats = static_feats
         self._si_feats = static_int_feats
+        self._w_size = window_size
+        self._h_size = horizon_size
+        self._si_embed_maps = {
+                si_label:{b:a for a,b in enumerate(si_map)}
+                for si_label,si_map in static_embed_maps.items()}
+
         ## include an additional element in case window diffs requested.
-        self._ssize = self._w_size + self_h_size + 1
+        self._smp_size = self._w_size + self_h_size + 1
 
         ## collect open file pointers, chunks, and labels for each timegrid
         for i,tg in enumerate(timegrids):
@@ -100,6 +110,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             self._tgs[tg] = {
                     "dynamic":tg_open["/data/dynamic"],
                     "static":tg_open["/data/static"],
+                    "time":tg_open["/data/time"],
                     "dlabels":json.loads(
                         tg_open["data"].attrs["dynamic"]
                         )["flabels"],
@@ -113,7 +124,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             ## indicates whether chunk pixels overlap the subsequent timegrid
             ntimes = self._tgs[tg]["dynamic"].shape[0]
             cur_chunks = [
-                    (tg, c[:2], ntimes-c[0].stop<self._ssize,
+                    (tg, c[:2], ntimes-c[0].stop<self._smp_size,
                         None if i==len(timegrids)-1 else timegrids[i+1])
                     for c in tg_open["/data/dynamic"].chunks
                     ]
@@ -126,7 +137,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
                 cur_chunks = filter(lambda c:not c[2], cur_chunks)
 
             ## Shuffle the chunks for all files and subset them as requested
-            if shuffle:
+            if self._shuffle:
                 if self._rng is None:
                     self._rng = np.random.default_rng(seed=seed)
                 self._rng.shuffle(self._chunks)
@@ -150,21 +161,17 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             else:
                 assert npx == self._tgs[tg]["dynamic"].shape[1], tg
         ## offsets must be between zero and the total length of samples
-        if shuffle_offset:
-            self._offsets = rng.integers(0, sample_separation, npx)
+        if self._roffset:
+            self._offsets = rng.integers(0, self._smp_sep, npx)
         else:
             self._offsets = np.zeros(npx)
         self._preload_count = preload_count
 
-        self._w_size = window_size
-        self._h_size = horizon_size
-
-        ## determine
+        ## group chunks into pools that are extracted and returned together
         nslices = len(self._chunks) // self._cpc + \
                 int(bool(len(self._chunks) % self._cpc))
         self._pool_slices = [slice(i*self._cpc,(i+1)*self._cpc)
                 for i in range(nslices)]
-        self._ssize = self._w_size + self._h_size
 
         self._cur_samples = []
 
@@ -203,25 +210,53 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             static_norm_coeffs.get(fl,(0,1)) for fl in self._s_feats
             ]).T
 
+        self._feat_info["s"] = [
+                (self._tgs[self._tgs_ordered[0]]["slabels"].index(fl),None)
+                for fl in self._s_feats
+                ]
+        self._feat_info["si"] = [
+                (self._tgs[self._tgs_ordered[0]]["slabels"].index(fl),None)
+                for fl in self._si_feats]
+
     def _replenish_chunk_pool(self, pool_slice:slice):
         """ """
         dsamples = []
         ssamples = []
-        for tg,(ts,ps),across,next_tg in self._chunks[cpool]:
-            dsample = self._tgs[tg]["dynamic"][ts,ps,:]
+        tsamples = []
+        ## extract samples from all the chunks in the provided pool
+        for tg,(ts,ps),across,next_tg in self._chunks[pool_slice]:
+            ts_extended = slice(ts.start, ts.stop+self._smp_size)
+            dsample = self._tgs[tg]["dynamic"][ts_extended,ps,:]
             ssample = self._tgs[tg]["static"][ps,:]
+            tsample = self._tgs[tg]["time"][ts_extended][1:]
+            ## If this chunk overlaps the next timegrid, extract the
+            ## corresponding first sample size in the next one
             if across and not next_tg is None:
+                ## valid start positions are drawn from within the current tg
+                ## chunk so will need no more than an additional sample's size
                 dsample = np.concatenate([
-                    dsample, self._tgs[next_tg]["dynamic"][:ssize,ps,:]
+                    dsample,self._tgs[next_tg]["dynamic"][:self._smp_size,ps,:]
                     ], axis=0)
+                tsample = np.concatenate([
+                    tsample,self._tgs[next_tg]["time"][:self._smp_size]
+                    ], axis=0)
+            ## apply pixel-wise offsets and extract all samples from valid
+            ## starting positions that fall within this temporal slice
             for pix,offset in enumerate(self._offsets[ps]):
-                ## replace this with extracted (w,h,s,si,t),y
-                dsamples.append(dsample[offset:offset+ssize,pix,:])
-                ssamples.append(ssample[pix,:])
+                slice_range = np.arange(ts.start,ts.stop)
+                sixs = slice_range[(slice_range-offset)%self._smp_sep == 0]
+                for ix in sixs:
+                    ## replace this with extracted (w,h,s,si,t,y)
+                    dsamples.append(dsample[ix:ix+self._smp_size,pix,:])
+                    ssamples.append(ssample[pix,:])
+                    tsamples.append(tsample[ix:ix+self._smp_size])
 
         ## separate, reorder, calculate derived features for each data category
+        ## also if feats are differentiated calculate the forward-difference.
         dsamples = np.stack(dsamples, axis=0)
         ssamples = np.stack(ssamples, axis=0)
+        tsamples = np.stack(tsamples, axis=0)
+
         tmp_w = _calc_feat_array(
                 src_array=dsamples[:self._w_size+1],
                 static_array=ssamples,
@@ -255,16 +290,59 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             tmp_y[1:,:,ix_fl] = np.diff(tmp_y[...,ix_fl], axis=0)
         tmp_y = (tmp_y[1:]-self._norms["y"][0])/self._norms["y"][1]
 
-        tmp_s = np.stack([ssamples[...,fl] for fl in self._s_feats], axis=-1)
+        ## extract float-style static data for each sample
+        tmp_s = np.stack([
+            ssamples[...,fix] for fix in self._feat_info["s"][0]
+            ], axis=-1)
+        tmp_s = (tmp_s-self._norms["s"][0])/self._norms["s"][1]
 
+        ## extract and one-hot encode int-style static data
+        tmp_si = [
+                np.zeros(
+                    (ssamples.shape[0], len(self._si_embed_maps[fl])),
+                    dtype=np.uint8),
+                for fl in self._si_feats
+                ]
+        for i,fl in enumerate(self._si_feats):
+            si_ixs = np.vectorize(self._si_embed_maps[fl].get)(
+                    self._feat_info["si"][0])
+            tmp_si[i][np.arange(ssamples.shape[0]),si_ixs] = 1
+
+        ## format the outputs as a tuple
+        self._cur_sample_count = tmp_w.shape[0]
+        self._cur_samples = (tmp_w,tmp_h,tmp_y,tmp_s,tmp_si,tmp_t)
+        ## if requested, shuffle the samples between the chunks
+        if self._shuffle:
+            sixs = np.arange(self._cur_sample_count)
+            self._rng.shuffle(sixs)
+            self._cur_samples = tuple(v[sixs] for v in self._cur_samples)
+        self._cur_sample_ix = 0
+        print([v.shape for v in self._cur_samples])
 
     def __iter__(self):
-        """ """
-        if len(self._cur_samples)==0:
+        """
+        Step through the currently-loaded samples in the chunk pool,
+        replenishing the pool with the next set of chunks when neccesary.
+
+        Samples are returned as 6-tuples like:
+        (window:(Sw,Fw), horizon:(Sh,Fh), target:(Sh,Fy), static:(Fs,),
+         static_int:((Ei,) for i in num_static_ints), time:(Sw+Sh,))
+        """
+        if self._cur_sample_ix == self._cur_sample_count:
             if len(self._pool_slices) == 0:
                 raise StopIteration(f"No More Chunks Available")
             self._replenish_chunk_pool(self._pool_slices.pop(0))
-        return self._cur_samples.pop(0)
+        ## ugly but the static int embeddings cant be stacked so whatev
+        cur_sample = (
+                self._cur_samples[0][self._cur_sample_ix],
+                self._cur_samples[1][self._cur_sample_ix],
+                self._cur_samples[2][self._cur_sample_ix],
+                self._cur_samples[3][self._cur_sample_ix],
+                tuple(v[self._cur_sample_ix] for v in self._cur_samples[4]),
+                self._cur_samples[5][self._cur_sample_ix],
+                )
+        self._cur_sample_ix += 1
+        return cur_sample
 
 def worker_init_fn(worker_id):
     """
