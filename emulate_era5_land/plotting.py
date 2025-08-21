@@ -841,8 +841,8 @@ def plot_hists(counts:list, labels:list, bin_coords:np.array, normalize=False,
     ax.legend(ncol=ps.get("legend_ncols"), fontsize=ps.get("legend_fontsize"))
     ax.set_xscale(ps.get("xscale"))
     ax.set_yscale(ps.get("yscale"))
-    ax.tick_params(axis='both', which='major', labelsize=ps.get("tick_fontsize"))
-    ax.tick_params(axis='both', which='minor', labelsize=ps.get("tick_fontsize"))
+    ax.tick_params(axis='both',which='major',labelsize=ps.get("tick_fontsize"))
+    ax.tick_params(axis='both',which='minor',labelsize=ps.get("tick_fontsize"))
 
     if show:
         plt.show()
@@ -850,6 +850,40 @@ def plot_hists(counts:list, labels:list, bin_coords:np.array, normalize=False,
         fig.set_size_inches(*ps.get("figsize"))
         fig.savefig(fig_path.as_posix(),bbox_inches="tight",dpi=ps.get("dpi"))
     return
+
+def plot_scatter(x, y, size=None, color=None, plot_spec={},
+        fig_path=None, show=False):
+    """
+    basic scatterplot using my plot_spec standard
+    """
+    ps = {"xlabel":"", "ylabel":"", "marker_size":4, "dpi":200, "cmap":"jet",
+            "text_size":12, "title":"", "norm":"linear", "marker":"o",
+            "cbar_shrink":1., "map_linewidth":2, "title_fontsize":14,
+            "legend_fontsize":14, "tick_fontsize":10, "legend_ncols":1}
+    ps.update(plot_spec)
+    plt.rcParams.update({"font.size":ps["text_size"]})
+
+    fig, ax = plt.subplots(figsize=ps.get("fig_size"))
+    ax.scatter(
+            x=x, y=y, s=size, c=color,
+            marker=ps.get("marker"),
+            cmap=ps.get("cmap"),
+            vmin=ps.get("vmin"),
+            norm=ps.get("norm"),
+            vmax=ps.get("vmax"),
+            linewidths=ps.get("linewidths"), ## marker edges
+            )
+    ax.set_xlabel(ps.get("xlabel"), fontsize=ps.get("label_fontsize"))
+    ax.set_ylabel(ps.get("ylabel"), fontsize=ps.get("label_fontsize"))
+    ax.set_title(ps.get("title"), fontsize=ps.get("title_fontsize"))
+    #ax.legend(ncol=ps.get("legend_ncols"), fontsize=ps.get("legend_fontsize"))
+    ax.tick_params(axis='both',which='major',labelsize=ps.get("tick_fontsize"))
+    ax.tick_params(axis='both',which='minor',labelsize=ps.get("tick_fontsize"))
+
+    if show:
+        plt.show()
+    if fig_path:
+        fig.savefig(fig_path.as_posix(),bbox_inches="tight",dpi=ps.get("dpi"))
 
 def plot_geo_scalar(data, latitude, longitude, bounds=None, plot_spec={},
              latlon_ticks=False, show=False, fig_path=None,
