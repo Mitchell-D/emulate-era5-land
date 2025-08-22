@@ -17,11 +17,11 @@ if __name__=="__main__":
     fig_dir = proj_root.joinpath("figures/test-gen")
     info_era5 = json.load(proj_root.joinpath(
                 "data/list_feats_era5.json").open("r"))
-    gen_loc_path = proj_root.joinpath("data/test-gen/test-gen_2.pkl")
+    gen_loc_path = proj_root.joinpath("data/test-gen/test-gen_5.pkl")
 
     ## Run the generator and store the time/location of its outputs
-    #'''
-    max_batches = 100000
+    '''
+    max_batches = 20000
     ds_train = SparseTimegridSampleDataset(
             timegrids=[tg for tg in data_dir.iterdir()
                 if int(tg.stem.split("_")[-1]) in range(2012,2018)],
@@ -59,17 +59,18 @@ if __name__=="__main__":
             sample_cutoff=.7,
             sample_across_files=True,
             sample_under_cutoff=True,
-            sample_separation=197, ## number coprime with 24 is best
+            #sample_separation=197, ## number coprime with 24 is best
+            sample_separation=157, ## number coprime with 24 is best
             random_offset=True,
-            chunk_pool_count=14,
-            buf_size_mb=1024,
-            buf_slots=128,
+            chunk_pool_count=48,
+            buf_size_mb=4096,
+            buf_slots=48,
             buf_policy=0,
             debug=True
             )
     gen = torch.utils.data.DataLoader(
             dataset=ds_train,
-            batch_size=64,
+            batch_size=256,
             num_workers=5,
             prefetch_factor=4,
             worker_init_fn=worker_init_fn,
@@ -90,11 +91,12 @@ if __name__=="__main__":
         if bix == max_batches:
             break
     pkl.dump((ds_train.signature, sample_locations), gen_loc_path.open("wb"))
-    #'''
+    '''
 
     ## plot the spatial and temporal distribution of generator outputs
-    '''
-    max_batches = 1024
+    #'''
+    max_batches = 100000
+    desc = "sample sep 157, pool chunks 48, batch size 256"
     sgn,locs = pkl.load(gen_loc_path.open("rb"))
     slabels,sdata = pkl.load(Path("data/static/era5_static.pkl").open("rb"))
     m_valid_base = sdata[slabels.index("m_valid")].astype(bool)
@@ -110,8 +112,8 @@ if __name__=="__main__":
     for bix,(ixv,ixh,t0,tf) in enumerate(locs):
         if bix==max_batches:
             break
-        ixv = ixv.numpy().astype(int)
-        ixh = ixh.numpy().astype(int)
+        ixv = ixv.astype(int)
+        ixh = ixh.astype(int)
         doy = []
         for t in t0:
             st = datetime.fromtimestamp(int(t), tz=timezone.utc)
@@ -132,7 +134,7 @@ if __name__=="__main__":
             longitude=lon,
             plot_spec={
                 "title":f"Spatial Sample Counts ({gen_loc_path.name}); " + \
-                        f"batches: {bix}",
+                        f"batches: {bix}\n{desc}",
                 "cmap":"gnuplot",
                 "cbar_label":"Number of samples",
                 "cbar_orient":"horizontal",
@@ -152,7 +154,7 @@ if __name__=="__main__":
             longitude=lon,
             plot_spec={
                 "title":f"Spatial Sample DoYs ({gen_loc_path.name}); " + \
-                        f"batches: {bix}",
+                        f"batches: {bix}\n{desc}",
                 "cmap":"hsv",
                 "cbar_label":"Most Recent Sample Day of Year",
                 "cbar_orient":"horizontal",
@@ -176,7 +178,7 @@ if __name__=="__main__":
             color="black",
             plot_spec={
                 "title":f"sample times vs batch ({gen_loc_path.name}); " + \
-                        f"batches: {bix}",
+                        f"batches: {bix}\n{desc}",
                 "marker":",",
                 "xlabel":"sample initialization time",
                 "ylabel":"batch number",
@@ -195,7 +197,7 @@ if __name__=="__main__":
             color="black",
             plot_spec={
                 "title":f"sample DoY vs batch ({gen_loc_path.name}); " + \
-                        f"batches: {bix}",
+                        f"batches: {bix}\n{desc}",
                 "marker":",",
                 "xlabel":"sample initialization day of year",
                 "ylabel":"batch number",
@@ -204,4 +206,4 @@ if __name__=="__main__":
             fig_path=fpath,
             )
     print(f"Generated {fpath.as_posix()}")
-    '''
+    #'''

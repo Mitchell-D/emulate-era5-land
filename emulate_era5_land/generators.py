@@ -45,7 +45,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
         :@param aux_static_feats: Optional ordered list of strings
             corresponding to stored static feature labels that will be returned
             separately from model inputs. You can use these for analysis,
-            returning indeces, biasing the loss function, etc.
+            returning indices, biasing the loss function, etc.
         :@param static_embed_maps: Dict mapping a stored static feature label
             to a list of possible integer values. The order of the listed
             values determines the one-hot encoding vector position of each.
@@ -439,7 +439,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
     def __next__(self):
         """
         Step through the currently-loaded samples in the chunk pool,
-        replenishing the pool with the next set of chunks when neccesary.
+        replenishing the pool with the next set of chunks when necessary.
 
         Samples are returned as 6-tuples like:
         (window:(Sw,Fw), horizon:(Sh,Fh), target:(Sh,Fy), static:(Fs,),
@@ -473,18 +473,24 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
 
 def worker_init_fn(worker_id):
     """
-    Modify the datasets so that they only reference a subset of all available
-    chunks
+    Modify the datasets so that they each reference a mutually exclusive
+    subset of all available chunks when multiprocessing is used.
     """
     worker_info = torch.utils.data.get_worker_info()
     dataset = worker_info.dataset  # the dataset copy in this worker process
     dataset._chunks = dataset._chunks[worker_info.id::worker_info.num_workers]
+    ## re-calculate the pool slices given the subset of chunks for this worker
+    nslices = len(dataset._chunks) // dataset._cpc + \
+            int(bool(len(dataset._chunks) % dataset._cpc))
+    dataset._pool_slices = [slice(i*dataset._cpc,(i+1)*dataset._cpc)
+            for i in range(nslices)]
+
 
 def _parse_feat_idxs(out_feats, src_feats, static_feats, derived_feats,
         alt_feats:list=[]):
     """
-    Helper for determining the Sequence indeces of stored features,
-    and the output array indeces of derived features.
+    Helper for determining the Sequence indices of stored features,
+    and the output array indices of derived features.
 
     :@param out_feats: Full ordered list of output features including
         dynamic stored and dynamic derived features
@@ -495,15 +501,15 @@ def _parse_feat_idxs(out_feats, src_feats, static_feats, derived_feats,
     :@param alt_feats: If stored features can be retrieved from a
         different source array, provide a list of that array's feat
         labels here, and a third element will be included in the
-        returned tuple listing the indeces of stored features with
-        respect to alt_feats. These indeces will correspond in order
+        returned tuple listing the indices of stored features with
+        respect to alt_feats. These indices will correspond in order
         to the None values in the stored feature index list
     :@return: 2-tuple (stored_feature_idxs, derived_data) where
         stored_feature_idxs is a list of integers indexing the
         array corresponding to src_feats, and derived_data is a
         4-tuple (out_idx,dynamic_arg_idxs,static_arg_idxs,lambda_func).
         If alt_feats are provided, a 3-tuple is returned instead
-        with the third element being the indeces of features available
+        with the third element being the indices of features available
         only in the alternative array wrt the alternative feature list.
     """
     tmp_sf_idxs = [] ## stored feature idxs wrt src feats
@@ -559,11 +565,11 @@ def _calc_feat_array(src_array, static_array,
     Both stored_feat_idxs and derived_data, and optionally
     alt_info are outputs of _parse_feat_idxs
 
-    stored_feat_idxs must include placeholder indeces where derived
+    stored_feat_idxs must include placeholder indices where derived
     or alternative data is substituted. derived_data is a list
     of 4-tuples: (out_idx, dynamic_arg_idxs, static_arg_idxs, func)
     where out_idx specifies each derived output's location in the
-    output array, *_arg_idxs are the indeces of the function inputs
+    output array, *_arg_idxs are the indices of the function inputs
     with respect to the source array, and func is the initialized
     lambda object associated with the transform.
 
@@ -586,7 +592,7 @@ def _calc_feat_array(src_array, static_array,
     :@param static_array: Array like source of static data for
         derived features, which must contain a superset of all
         their ingredient features.
-    :@param stored_feat_idxs: Ordered indeces of stored feats with
+    :@param stored_feat_idxs: Ordered indices of stored feats with
         respect to the source array, including placeholder values
         (typically 0) where derived/alternative feats are placed.
         This is an output of _parse_feat_idxs
@@ -594,7 +600,7 @@ def _calc_feat_array(src_array, static_array,
         derived feature info and functions. This is an output of
         _parse_feat_idxs
     :@param alt_info: Optional 2-tuple of lists for alt feature
-        indeces wrt the alt array and output array, respectively.
+        indices wrt the alt array and output array, respectively.
         This is also an output of _parse_feat_idxs.
     :@param alt_array: Alternative source array containing a
         superset of any alt feats requested in the output array.
@@ -602,7 +608,7 @@ def _calc_feat_array(src_array, static_array,
         correspond to the axes of alt_array, which reshape
         alt_array to the shape of src_array (except the feat dim).
     """
-    ## Extract a numpy array around stored feature indeces, which
+    ## Extract a numpy array around stored feature indices, which
     ## should include placeholders for alt and derived feats
     sf_subset = src_array[...,stored_feat_idxs]
 
