@@ -471,7 +471,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
     def __iter__(self):
         return self
 
-def worker_init_fn(worker_id):
+def stsd_worker_init_fn(worker_id):
     """
     Modify the datasets so that they each reference a mutually exclusive
     subset of all available chunks when multiprocessing is used.

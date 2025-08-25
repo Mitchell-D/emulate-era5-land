@@ -7,7 +7,7 @@ import json
 import pickle as pkl
 import torch
 
-from emulate_era5_land.generators import worker_init_fn
+from emulate_era5_land.generators import stsd_worker_init_fn
 from emulate_era5_land.generators import SparseTimegridSampleDataset
 from emulate_era5_land.plotting import plot_geo_scalar,plot_scatter
 
@@ -73,7 +73,7 @@ if __name__=="__main__":
             batch_size=256,
             num_workers=5,
             prefetch_factor=4,
-            worker_init_fn=worker_init_fn,
+            worker_init_fn=stsd_worker_init_fn,
             )
 
     sample_locations = []
