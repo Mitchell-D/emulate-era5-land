@@ -18,12 +18,13 @@ import matplotlib.pyplot as plt
 import torch
 from emulate_era5_land.generators import SparseTimegridSampleDataset
 from emulate_era5_land.generators import stsd_worker_init_fn
+from emulate_era5_land.models import LSTM_S2S
 
 metric_options = {
         }
 
 model_options = {
-        #"lstm-s2s":get_lstm_s2s,
+        "lstm-s2s":LSTM_S2S
         }
 
 optimizer_options = {
@@ -105,8 +106,7 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
             static_embed_maps=config["feats"]["static_embed_maps"],
             window_size=config["feats"]["window_size"],
             horizon_size=config["feats"]["horizon_size"],
-            dynamic_norm_coeffs=config["feats"]["dynamic_norm_coeffs"],
-            static_norm_coeffs=config["feats"]["static_norm_coeffs"],
+            norm_coeffs=config["feats"]["norm_coeffs"],
 
             ## training data specific configuration
             shuffle=config["data"]["train"]["shuffle"],
@@ -138,8 +138,7 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
             static_embed_maps=config["feats"]["static_embed_maps"],
             window_size=config["feats"]["window_size"],
             horizon_size=config["feats"]["horizon_size"],
-            dynamic_norm_coeffs=config["feats"]["dynamic_norm_coeffs"],
-            static_norm_coeffs=config["feats"]["static_norm_coeffs"],
+            norm_coeffs=config["feats"]["norm_coeffs"],
 
             ## validation data specific configuration
             shuffle=config["data"]["val"]["shuffle"],
@@ -181,14 +180,14 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
             model_type=config["model"]["type"],
             model_args={
                 ## defaults for feature sizes to prevent repetition
-                "num_window_feats":len(config["feats"]["window_feats"]),
-                "num_horizon_feats":len(config["feats"]["horizon_feats"]),
-                "num_target_feats":len(config["feats"]["target_feats"]),
-                "num_static_feats":len(config["feats"]["static_feats"]),
-                "static_int_feat_sizes":[
-                    len(config["feats"]["static_embed_maps"][fk])
-                    for fk in config["feats"]["static_int_feats"],
-                    ],
+                "window_feats":config["feats"]["window_feats"],
+                "horizon_feats":config["feats"]["horizon_feats"],
+                "target_feats":config["feats"]["target_feats"],
+                "static_feats":config["feats"]["static_feats"],
+                "static_int_feats":config["feats"]["static_feats"],
+                "static_embed_maps":config["feats"]["static_embed_maps"],
+                "norm_coeffs":config["feats"]["norm_coeffs"],
+
                 ## user-defined other model parameters
                 **config["model"]["args"],
                 },
@@ -279,58 +278,82 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
 
 if __name__=="__main__":
     ## config template
+    info_era5 = json.load(
+            proj_root.joinpath("data/list_feats_era5.json").open("r"))
     config = {
         "feats":{
-            "window_feats":[],
-            "horizon_feats":[],
-            "target_feats":[],
-            "static_feats":[],
-            "static_int_feats":[],
-            "aux_dynamic_feats":[],
-            "aux_static_feats":[],
-            "derived_feats":{},
-            "static_embed_maps":{},
-            "window_size":None,
-            "horizon_size":None,
-            "dynamic_norm_coeffs":{},
-            "static_norm_coeffs":{},
+            "window_feats":[
+                "pres","tmp","dwpt","apcp","alb",
+                "dlwrf","dswrf","weasd","windmag",
+                "vsm-07", "vsm-28", "vsm-100", "vsm-289",
+                ],
+            "horizon_feats":[
+                "pres","tmp","dwpt","apcp","alb",
+                "dlwrf","dswrf","weasd","windmag",
+                ],
+            "target_feats":[
+                "diff vsm-07","diff vsm-28","diff vsm-100","diff vsm-289",
+                ],
+            "static_feats":["geopot","lakec","vc-high","vc-low",],
+            "static_int_feats":["soilt","vt-high","vt-low"],
+            "aux_dynamic_feats":["evp","lhtfl"],
+            "aux_static_feats":["vidxs","hidxs"],
+            "derived_feats":info_era5["derived-feats"],
+            "static_embed_maps":{
+                "soilt":[0, 1, 2, 3, 4, 5, 6, 7],
+                "vt-low":[0,  1,  2,  7,  9, 10, 11, 13, 16, 17],
+                "vt-high":[0,  3,  5,  6, 18, 19],
+                },
+            "window_size":24,
+            "horizon_size":72,
+            "norm_coeffs":info_era5["norm-coeffs"],
             },
         "data":{
             "train":{
-                "shuffle":None,
-                "sample_cutoff":None,
-                "sample_across_files":None,
-                "sample_under_cutoff":None,
-                "sample_separation":None,
-                "random_offset":None,
-                "chunk_pool_count":None,
-                "buf_size_mb":None,
-                "buf_slots":None,
-                "buf_policy":None,
-                "batch_size":None,
-                "num_workers":None,
-                "prefetch_factor":None,
+                "shuffle":True,
+                "sample_cutoff":.66,
+                "sample_across_files":True,
+                "sample_under_cutoff":True,
+                "sample_separation":157,
+                "random_offset":True,
+                "chunk_pool_count":48,
+                "buf_size_mb":4096,
+                "buf_slots":48,
+                "buf_policy":0,
+                "batch_size":256,
+                "num_workers":5,
+                "prefetch_factor":4,
                 },
             "val":{
-                "shuffle":None,
-                "sample_cutoff":None,
-                "sample_across_files":None,
-                "sample_under_cutoff":None,
-                "sample_separation":None,
-                "random_offset":None,
-                "chunk_pool_count":None,
-                "buf_size_mb":None,
-                "buf_slots":None,
-                "buf_policy":None,
-                "batch_size":None,
-                "num_workers":None,
-                "prefetch_factor":None,
+                "shuffle":True,
+                "sample_cutoff":.66,
+                "sample_across_files":True,
+                "sample_under_cutoff":False,
+                "sample_separation":157,
+                "random_offset":True,
+                "chunk_pool_count":48,
+                "buf_size_mb":4096,
+                "buf_slots":48,
+                "buf_policy":0,
+                "batch_size":256,
+                "num_workers":5,
+                "prefetch_factor":4,
                 },
             },
         "metrics":{},
         "model":{
-            "type":None,
-            "args":{}
+            "type":"lstm-s2s",
+            "args":{
+                "static_int_encoding_size":6,
+                "num_hidden_feats":32,
+                "num_hidden_layers":4,
+                "normalized_inputs":True,
+                "normalized_outputs":False,
+                "cycle_targets":[
+                    "diff vsm-07","diff vsm-28","diff vsm-100","diff vsm-289",
+                    ],
+                "teacher_forcing":True,
+                },
             },
         "setup":{
             "loss_metric":None,

@@ -13,11 +13,11 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
     def __init__(self, timegrids:list, window_feats, horizon_feats,
             target_feats, static_feats, static_int_feats, derived_feats={},
             aux_dynamic_feats=[], aux_static_feats=[], static_embed_maps={},
-            window_size=24, horizon_size=24, dynamic_norm_coeffs={},
-            static_norm_coeffs={}, shuffle=True, seed=None, sample_cutoff=1,
-            sample_across_files=True, sample_under_cutoff=True,
-            sample_separation=1, random_offset=True, chunk_pool_count=4,
-            buf_size_mb=1024, buf_slots=128, buf_policy=0, debug=False):
+            window_size=24, horizon_size=24, norm_coeffs={}, shuffle=True,
+            seed=None, sample_cutoff=1, sample_across_files=True,
+            sample_under_cutoff=True, sample_separation=1, random_offset=True,
+            chunk_pool_count=4, buf_size_mb=1024, buf_slots=128, buf_policy=0,
+            debug=False):
         """
 
          o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o
@@ -55,9 +55,8 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
         :@param shuffle: If True, samples will be shuffled by chunk rather than
             being returned chronologically as stored.
         :@param seed: Random number generator seed
-        :@param dynamic_norm_coeffs: Dict mapping feature names to a 2-tuple
+        :@param norm_coeffs: Dict mapping feature names to a 2-tuple
             (mean, stddev) for normalizing input variables to a unit gaussian.
-        :@param static_norm_coeffs:
         :@param sample_across_files: If True, samples that overlap the final
             time step in a timegrid file will be completed by reading the first
             timesteps for the same pixel in the subsequent timegrid in the
@@ -114,8 +113,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
         self._si_embed_maps = {
                 si_label:{b:a for a,b in enumerate(si_map)}
                 for si_label,si_map in static_embed_maps.items()}
-        self._d_coeffs = dynamic_norm_coeffs
-        self._s_coeffs = static_norm_coeffs
+        self._coeffs = norm_coeffs
 
         self._cur_samples = None
         self._cur_sample_ix = None
@@ -216,8 +214,10 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
                     == tuple(self._tgs[tg]["slabels"]), tg
 
         ## get idxs/funcs of the stored and derived dynamic feats of each type
+        ## yinit is always the undifferentiated version of features.
         pf_args = {"w":self._w_feats, "h":self._h_feats,
-                "y":self._y_feats, "ad":self._ad_feats}
+                "y":self._y_feats, "ad":self._ad_feats,
+                "yinit":[fl.split(" ")[-1] for fl in self._y_feats]}
         self._feat_info = {}
         self._diff_feats = {"w":[], "h":[], "y":[], "ad":[]}
         for k,v in pf_args.items():
@@ -235,11 +235,11 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
 
         ## establish vectors for normalizing outputs. keep any modifier parts
         self._norms = {
-                k:np.array([self._d_coeffs.get(fl,(0,1)) for fl in v]).T
+                k:np.array([self._coeffs.get(fl,(0,1)) for fl in v]).T
                 for k,v in pf_args.items()
                 }
         self._norms["s"] = np.array([
-            self._s_coeffs.get(fl,(0,1)) for fl in self._s_feats
+            self._coeffs.get(fl,(0,1)) for fl in self._s_feats
             ]).T
 
         self._feat_info["s"] = tuple(zip(*[
@@ -280,8 +280,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
                 "static_embed_maps":self._si_embed_maps,
                 "window_size":self._w_size,
                 "horizon_size":self._h_size,
-                "dynamic_norm_coeffs":self._d_coeffs,
-                "static_norm_coeffs":self._s_coeffs,
+                "norm_coeffs":self._coeffs,
                 "shuffle":self._shuffle,
                 "seed":self._seed,
                 "sample_cutoff":self._sample_cutoff,
@@ -297,7 +296,11 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
                 }
 
     def _replenish_chunk_pool(self, pool_slice:slice):
-        """ """
+        """
+        Load a series of chunks from the timegrid files, identify valid start
+        times, separate samples into time series components, calculate derived
+        features, normalize data, and return the new series of samples.
+        """
         dsamples = []
         ssamples = []
         tsamples = []
@@ -351,7 +354,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
                 )
         for fl in self._diff_feats["w"]:
             ix_fl = self._w_feats.index(fl)
-            tmp_w[1:,:,ix_fl] = np.diff(tmp_w[...,ix_fl], axis=0)
+            tmp_w[:,1:,ix_fl] = np.diff(tmp_w[...,ix_fl], axis=1)
         tmp_w = (tmp_w[:,1:]-self._norms["w"][0])/self._norms["w"][1]
 
         tmp_h = _calc_feat_array(
@@ -362,7 +365,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
                 )
         for fl in self._diff_feats["h"]:
             ix_fl = self._h_feats.index(fl)
-            tmp_h[1:,:,ix_fl] = np.diff(tmp_h[...,ix_fl], axis=0)
+            tmp_h[:,1:,ix_fl] = np.diff(tmp_h[...,ix_fl], axis=1)
         tmp_h = (tmp_h[:,1:]-self._norms["h"][0])/self._norms["h"][1]
 
         tmp_y = _calc_feat_array(
@@ -373,7 +376,10 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
                 )
         for fl in self._diff_feats["y"]:
             ix_fl = self._y_feats.index(fl)
-            tmp_y[1:,:,ix_fl] = np.diff(tmp_y[...,ix_fl], axis=0)
+            tmp_y[:,1:,ix_fl] = np.diff(tmp_y[...,ix_fl], axis=1)
+        ## extract undifferentiated initial vector
+        tmp_init = tmp_y[:,0][:,None]
+        tmp_init = (tmp_init-self._norms["yinit"][0])/self._norms["yinit"][1]
         tmp_y = (tmp_y[:,1:]-self._norms["y"][0])/self._norms["y"][1]
 
         tmp_ad = _calc_feat_array(
@@ -423,11 +429,11 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
         if self._shuffle:
             self._rng.shuffle(sixs)
 
-        ## format the outputs as a tuple (w, h, y, s, (si), t)
+        ## format the outputs as a tuple (inputs, outputs, auxiliary_
         tmp_si = tuple(v[sixs] for v in tmp_si)
         self._cur_samples = (
-                (tmp_w[sixs], tmp_h[sixs], tmp_s[sixs], tmp_si), ## inputs
-                tmp_y[sixs], ## outputs
+                (tmp_w[sixs],tmp_h[sixs],tmp_s[sixs],tmp_si,tmp_init[sixs]),
+                (tmp_y[sixs],), ## outputs
                 (tmp_ad[sixs], tmp_as[sixs], tsamples[sixs]) ## auxiliary
                 )
         ## finish time
@@ -441,9 +447,38 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
         Step through the currently-loaded samples in the chunk pool,
         replenishing the pool with the next set of chunks when necessary.
 
-        Samples are returned as 6-tuples like:
-        (window:(Sw,Fw), horizon:(Sh,Fh), target:(Sh,Fy), static:(Fs,),
-         static_int:((Ei,) for i in num_static_ints), time:(Sw+Sh,))
+        Samples are returned as 3-tuples like: (input, target, auxiliary)
+
+        such that...
+
+        input:      (window, horizon, static, static_int, target_init)
+        target:     (targets,)
+        auxiliary:  (aux_dynamic, aux_static, time)
+
+        and each array has a structure like...
+
+        window:         (B, Sw, Fw)
+        horizon:        (B, Sh, Fh)
+        static:         (B, Fs)
+        static_int:     ((B, Fsi_k) for k in static_feats)
+        target_init:    (B, 1, Fy)
+        targets:        (B, Sh, Fy)
+        aux_dynamic:    (B, Sw+Sh, Fad)
+        aux_static:     (B, Fas)
+        time:           (B, Sw+Sh)
+
+        where...
+
+        B       := samples per batch
+        Sw      := window sequence elements
+        Sh      := horizon sequence elements
+        Fw      := window features
+        Fh      := horizon features
+        Fs      := static features
+        Fsi_k   := Static int embedding elements
+        Fy      := target features
+        Fad     := auxiliary dynamic features
+        Fas     := auxiliary static features
         """
         if self._cur_sample_ix == self._cur_sample_count:
             if len(self._pool_slices) == 0:
@@ -457,8 +492,11 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
                     self._cur_samples[0][2][self._cur_sample_ix],
                     tuple(v[self._cur_sample_ix]
                         for v in self._cur_samples[0][3]),
+                    self._cur_samples[0][4][self._cur_sample_ix],
                     ),
-                self._cur_samples[1][self._cur_sample_ix],
+                (
+                    self._cur_samples[1][0][self._cur_sample_ix],
+                    ),
                 (
                     self._cur_samples[2][0][self._cur_sample_ix],
                     self._cur_samples[2][1][self._cur_sample_ix],
@@ -484,7 +522,6 @@ def stsd_worker_init_fn(worker_id):
             int(bool(len(dataset._chunks) % dataset._cpc))
     dataset._pool_slices = [slice(i*dataset._cpc,(i+1)*dataset._cpc)
             for i in range(nslices)]
-
 
 def _parse_feat_idxs(out_feats, src_feats, static_feats, derived_feats,
         alt_feats:list=[]):
