@@ -8,14 +8,14 @@
 #SBATCH -p standard
 
 ### TOTAL processors (number of tasks)
-#SBATCH --ntasks 6
+#SBATCH --ntasks 9
 ####SBATCH --ntasks 1
 
 ### total run time estimate (D-HH:MM)
 #SBATCH -t 5-00:00
 
 ### memory (MB per CPU)
-#SBATCH --mem-per-cpu=8G
+#SBATCH --mem-per-cpu=12G
 ###SBATCH --mem-per-cpu=24G
 ###SBATCH --mem-per-cpu=48G
 

@@ -18,6 +18,30 @@ from emulate_era5_land.extract_gridstats import make_gridhist_hdf5
 from emulate_era5_land.helpers import sector_slices
 from emulate_era5_land.plotting import geo_quad_plot,plot_hists
 
+def get_gridstats_global(gridstat_path):
+    F = h5py.File(gs_path, "r")
+    dlabels  = json.loads(F["data"].attrs["gridstats"])["flabels"]
+    mlabels  = json.loads(F["data"].attrs["gridstats"])["mlabels"]
+    slabels  = json.loads(F["data"].attrs["static"])["flabels"]
+    counts = F["/data/counts"][...]
+    gridstats = F["/data/gridstats"]
+    static = F["/data/static"][...]
+    m_valid = F["/data/mask"][...]
+    latlon = F["/data/latlon"][...]
+    valid_ixs = np.where(m_valid)
+
+    ## (month, hour, pixel, feature, metric)
+    slices = sector_slices(
+            #sector_shape=(None,None,16384,None,None),
+            sector_shape=(3,None,sector_size,None,None),
+            bounding_box=gridstats.shape,
+            iteration_order=None,
+            separate_sparse=True,
+            )
+
+    ix_valid = np.where(m_valid)
+
+
 def plot_gridstats_spatial(gridstat_path, fig_dir:Path, plot_spec_per_feat={},
         sector_size=32768, debug=False):
     F = h5py.File(gs_path, "r")

@@ -351,8 +351,17 @@ def sector_slices(sector_shape, bounding_box,
 
     :@param sector_shape: Maximum shape along each dimension for sectors that
         are returned. The actual shape of returned sectors may be smaller if
-        a border of subgrid_bounds is encountered.
-    :@param subgrid_bounds:
+        a border of bounding_box is encountered.
+    :@param bounding_box: Size of the grid within which sectors are
+        partitioned. This may be a tuple of integers specifying the number
+        of elements along each axis, or a tuple of 2-tuples of integers
+        contianing a range of index values [start, stop) along each axis.
+    :@param iteration_order: Optional list of integers specifying the order in
+        which each axis will be incremented during iteration. The first item in
+        the list will be varied and all others held constant until the last
+        element along the first item's axis is reached, at which point
+        the next element in the second item's axis will be selected, and
+        iteration will proceed along the first item's axis, and so forth.
     """
     assert len(bounding_box)==len(sector_shape)
 

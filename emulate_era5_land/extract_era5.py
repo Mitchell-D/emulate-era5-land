@@ -19,12 +19,19 @@ from datetime import datetime,timezone
 
 from emulate_era5_land.helpers import get_permutation_inverse
 
-def get_grib_extract_gen(rec_labels, accumulation_vars, conversions={}):
+def get_grib_extract_gen(rec_labels, accumulation_vars,
+        conversions={}, skip=[]):
     """
     returns a generator that accepts a monthly grib file and the grib file
     for the previous month, and generates hourly data on a daily basis such
     that the provided accumulation_vars have been de-accumulated according to:
     https://confluence.ecmwf.int/pages/viewpage.action?pageId=197702790
+
+    :@param rec_labels: ordered labels naming records in the grib file
+    :@param accumulation_vars: list of labels that should be de-accumulated
+    :@param conversions: Dict mapping labels to functions used to convert
+        data records to their stored format.
+    :@param skip: List of labels to avoid returning.
     """
     def _gen_era5_grib_daily(file_path:Path, prev_file_path:Path,
             m_valid:np.ndarray):
@@ -50,8 +57,12 @@ def get_grib_extract_gen(rec_labels, accumulation_vars, conversions={}):
             prev_frame = prev_frame[m_valid]
         #print(f"{prev_frame[167,448,rec_labels.index('tp')]*1000 = }")
 
+        keep_ixs,keep_labels = zip(*[
+            (i,l) for i,l in enumerate(rec_labels) if l not in skip
+            ])
+
         daily_recs = len(rec_labels) * 24
-        assert gf.messages % daily_recs == 0
+        assert gf.messages % daily_recs == 0,f"{daily_recs=} {file_path=}"
         for i in range(gf.messages // daily_recs):
             gf.seek(i*daily_recs)
             ## (F*24,Y,X)
@@ -64,8 +75,6 @@ def get_grib_extract_gen(rec_labels, accumulation_vars, conversions={}):
             rec_array = np.transpose(rec_array, (0,2,3,1))
             ## (24,P,F)
             rec_array = rec_array[:,m_valid]
-            #print(f"{rec_array[0,167,448,rec_labels.index('tp')]*1000 = }")
-            #print(f"{rec_array[1,167,448,rec_labels.index('tp')]*1000 = }")
             ## Store 23z from this day for tomorrow
             new_last_frame = np.copy(rec_array[-1,:,:])
             for k,l in enumerate(rec_labels):
@@ -83,9 +92,7 @@ def get_grib_extract_gen(rec_labels, accumulation_vars, conversions={}):
                                 f"{np.where(gtv)}")
             ## cycle final accumulated state (at 23z) of this day to tomorrow
             prev_frame = new_last_frame
-            #for v in rec_array[:,167,448,rec_labels.index('tp')]:
-            #    print(f"{v*1000:.5f}")
-            yield (rec_labels,rec_array)
+            yield (keep_labels,rec_array[...,keep_ixs])
     return _gen_era5_grib_daily
 
 def _gen_era5_wbgt_daily(file_path:Path,prev_file_path:Path,m_valid:np.array):
@@ -145,14 +152,13 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
             "evatc":lambda w:w*1000,
             "evabs":lambda w:w*1000,
             "evaow":lambda w:w*1000,
-            "evaow":lambda w:w*1000,
             "evavt":lambda w:w*1000,
-            "sro":lambda w:w*1000,
-            "ssro":lambda w:w*1000,
-            "es":lambda w:w*1000,
             "smlt":lambda w:w*1000,
             "sf":lambda w:w*1000,
-            "src":lambda w:w*1000,
+            "src":lambda w:np.clip(w*1000,0,None),
+            "es":lambda w:w*1000,
+            "ssro":lambda w:w*1000,
+            "sro":lambda w:w*1000,
             }
     extract_methods = {
             "snveg":get_grib_extract_gen(
@@ -171,6 +177,14 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
                 accumulation_vars=["slhf","ssr","str","sshf","ssrd","strd"],
                 conversions=conversions,
                 ),
+            "evaprunoff":get_grib_extract_gen(
+                rec_labels=["src","evabs","evatc","evavt",
+                    "ro","es","ssro","sro"],
+                accumulation_vars=["evabs","evatc","evavt",
+                    "ro","es","ssro", "sro"],
+                conversions=conversions,
+                skip=["ro"],
+                ),
             "wbgt":_gen_era5_wbgt_daily,
             }
 
@@ -181,7 +195,7 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
             m_valid = np.full(tmp_array.shape[1:3], True)
         ## declare generators for this month
         gens = [extract_methods[vk](*file_dict[mix][vk], m_valid)
-                for vk in ["wbgt", "snveg", "rad", "soil"]]
+                for vk in ["wbgt", "evaprunoff", "snveg", "rad", "soil"]]
         labels = []
         got_labels = False
         ## cycles once per day
@@ -297,7 +311,7 @@ if __name__=="__main__":
     ## Directories should contain only files that should be loaded to the hdf5
     data_dir = Path("data")
     #out_dir = data_dir.joinpath("timegrids")
-    out_dir = data_dir.joinpath("/rstor/mdodson/era5/timegrids-test/")
+    out_dir = Path("/rstor/mdodson/era5/timegrids-new/")
     static_pkl = data_dir.joinpath("static/era5_static.pkl")
     perm_pkl = data_dir.joinpath("permutations/permutation_210.pkl")
     era5_dir = data_dir.joinpath("era5")
@@ -319,11 +333,12 @@ if __name__=="__main__":
 
     ## it's critical that the stored data abides this naming structure
     path_templates = {
-            "rad":"{year}/era5land_rad_vars_{year}{month:02}.grib",
-            "snveg":"{year}/era5land_snveg_vars_{year}{month:02}.grib",
-            "soil":"{year}/era5land_soil_vars_{year}{month:02}.grib",
-            "wbgt":"{year}/era5land_wbgt_vars_{year}{month:02}.nc",
-            }
+        "evaprunoff":"{year}/era5land_evaprunoff_vars_{year}{month:02}.grib",
+        "rad":"{year}/era5land_rad_vars_{year}{month:02}.grib",
+        "snveg":"{year}/era5land_snveg_vars_{year}{month:02}.grib",
+        "soil":"{year}/era5land_soil_vars_{year}{month:02}.grib",
+        "wbgt":"{year}/era5land_wbgt_vars_{year}{month:02}.nc",
+        }
 
     #extract_years = list(range(2022,2023))
     extract_years = list(range(2012,2024))

@@ -9,7 +9,7 @@
 #SBATCH -p shared
 
 ### TOTAL processors (number of tasks)
-#SBATCH --ntasks 16
+#SBATCH --ntasks 13
 ###SBATCH --ntasks 2
 
 ### total run time estimate (D-HH:MM)
@@ -30,8 +30,8 @@
 #SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_6.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_6.err # STDERR
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.out # STDOUT
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.err # STDERR
+###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.out # STDOUT
+###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.err # STDERR
 
@@ -40,7 +40,7 @@ cd /rhome/mdodson/emulate-era5-land
 #Run code
 set runcmd = /nas/rhome/mdodson/.micromamba/envs/learn-torch/bin/python
 ##${runcmd} -u scripts/extract_static.py
-##${runcmd} -u emulate_era5_land/extract_era5.py
+${runcmd} -u emulate_era5_land/extract_era5.py
 ##${runcmd} -u scripts/test_generators.py
 ##${runcmd} -u scripts/get_permutation.py
-${runcmd} -u scripts/eval_gridstats.py
+#${runcmd} -u scripts/eval_gridstats.py

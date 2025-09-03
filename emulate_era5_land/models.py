@@ -8,7 +8,10 @@ class LSTM_S2S(tnn.Module):
     differentiated outputs, as well as
 
     The model is structured in a window-horizon configuration where the window
-    r
+    includes known output states that aren't available in the horizon, however
+    since weights are shared between the window and horizon, all these states
+    or the differentiated version of the states must be the target variables
+    for model prediction.
 
     If a differentiated target variable is cycled by accumulated
     integration (the only option for cycling), its normalization must be
@@ -125,7 +128,11 @@ class LSTM_S2S(tnn.Module):
 
     def forward(self, window, horizon, static, static_int,
             target=None, random_init_state=False):
-        """ """
+        """
+        Run the RNN on a batch of sequence samples.
+
+        :@param window: (B, Sw, Fh)
+        """
         if not self._norm_in:
             window = (window-self.norm["w"][0])/self.norm["w"][1]
             horizon = (horizon-self.norm["h"][0])/self.norm["h"][1]
