@@ -384,7 +384,8 @@ def plot_lines(domain:list, ylines:list, fig_path:Path=None,
     plt.clf()
     # Merge provided plot_spec with un-provided default values
     old_ps = {"xscale":"linear", "legend_font_size":8, "legend_ncols":1,
-            "yscale":"linear", "date_format":"%Y-%m-%d"}
+            "yscale":"linear", "date_format":"%Y-%m-%d",
+            "colors":None, "linestyle":None}
     old_ps.update(plot_spec)
     plot_spec = old_ps
 
@@ -393,9 +394,18 @@ def plot_lines(domain:list, ylines:list, fig_path:Path=None,
 
     # Plot each
     fig, ax = plt.subplots(figsize=plot_spec.get("fig_size"))
+
+    if plot_spec.get("zero_axis"):
+        ax.axhline(0, color="black")
+    if plot_spec.get("zero_yaxis"):
+        ax.axvline(0, color="black")
+
     colors = plot_spec.get("colors")
     if colors:
         assert len(ylines)<=len(colors)
+    linestyle = plot_spec.get("linestyle")
+    if linestyle:
+        assert len(ylines)<=len(linestyle)
     for i in range(len(ylines)):
         if multi_domain:
             cur_domain = domain[i]
@@ -404,6 +414,7 @@ def plot_lines(domain:list, ylines:list, fig_path:Path=None,
         ax.plot(cur_domain, ylines[i],
                 label=labels[i] if len(labels) else "",
                 linewidth=plot_spec.get("line_width"),
+                linestyle=None if not linestyle else linestyle[i],
                 color=None if not colors else colors[i])
 
     ax.set_xlabel(plot_spec.get("xlabel"),
@@ -444,10 +455,6 @@ def plot_lines(domain:list, ylines:list, fig_path:Path=None,
     if plot_spec.get("xtick_align"):
         plt.setp(ax.get_xticklabels(),
                 horizontalalignment=plot_spec.get("xtick_align"))
-    if plot_spec.get("zero_axis"):
-        ax.axhline(0, color="black")
-    if plot_spec.get("zero_yaxis"):
-        ax.axvline(0, color="black")
 
     if plot_spec.get("grid"):
         plt.grid()

@@ -75,6 +75,7 @@ if __name__=="__main__":
     '''
 
     ## extract a time range for specific pixels
+    '''
     trange_coord = [
             #((dttime(2015,5,15),dttime(2015,5,17)),(28.8,-98.1)), ## 92776
             #((dttime(2013,5,20),dttime(2013,5,22)),(33.3,-96.0)), ## 79104
@@ -142,3 +143,4 @@ if __name__=="__main__":
                 fig_path=fig_path,
                 )
         print(f"Generated {fig_path.as_posix()}")
+    '''
