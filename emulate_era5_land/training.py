@@ -4,13 +4,14 @@ each based on the configuration dict below. Each run will create a new
 ModelDir directory and populate it with model info, the configuration,
 and intermittent models saved duing training.
 """
+import pickle as pkl
 import numpy as np
 import json
 from pathlib import Path
 import torch
 from emulate_era5_land.generators import SparseTimegridSampleDataset
 from emulate_era5_land.generators import stsd_worker_init_fn
-from emulate_era5_land.models import LSTM_S2S
+from emulate_era5_land.models import AccLSTM
 
 metric_options = {
         "mae":torch.nn.L1Loss,
@@ -18,14 +19,15 @@ metric_options = {
         }
 
 model_options = {
-        "lstm-s2s":LSTM_S2S
+        "acclstm":AccLSTM
         }
 
 optimizer_options = {
         "adam":torch.optim.Adam,
         "adamw":torch.optim.AdamW,
         "radam":torch.optim.RAdam,
-        "rmsprop":torch.optim.rmsprop,
+        "nadam":torch.optim.NAdam,
+        "rmsprop":torch.optim.RMSprop,
         "sgd":torch.optim.SGD,
         }
 
@@ -79,11 +81,12 @@ class EarlyStopper:
                 return True
         return False
 
-def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
-        use_residual_norm=False):
+def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
     """
     Dispatch the training routine for a single model configuration...
     """
+    if device is None:
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     ## declare datasets for training and validation
     ds_train = SparseTimegridSampleDataset(
             timegrids=config["data"]["train"]["timegrids"],
@@ -95,7 +98,7 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
             static_feats=config["feats"]["static_feats"],
             static_int_feats=config["feats"]["static_int_feats"],
             aux_dynamic_feats=config["feats"]["aux_dynamic_feats"],
-            aux_static_ceats=config["feats"]["aux_static_feats"],
+            aux_static_feats=config["feats"]["aux_static_feats"],
             derived_feats=config["feats"]["derived_feats"],
             static_embed_maps=config["feats"]["static_embed_maps"],
             window_size=config["feats"]["window_size"],
@@ -127,7 +130,7 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
             static_feats=config["feats"]["static_feats"],
             static_int_feats=config["feats"]["static_int_feats"],
             aux_dynamic_feats=config["feats"]["aux_dynamic_feats"],
-            aux_static_ceats=config["feats"]["aux_static_feats"],
+            aux_static_feats=config["feats"]["aux_static_feats"],
             derived_feats=config["feats"]["derived_feats"],
             static_embed_maps=config["feats"]["static_embed_maps"],
             window_size=config["feats"]["window_size"],
@@ -167,7 +170,7 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
             )
 
     ## initialize all the metric functions, which should include the loss func
-    metrics = {k:metric_options[v[0]](**v[1]) for k,v in config["metrics"]}
+    metrics = {k:metric_options[k](**v) for k,v in config["metrics"].items()}
 
     ## initialize the model, providing default args that would be redundant
     model = get_model(
@@ -178,7 +181,7 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
                 "horizon_feats":config["feats"]["horizon_feats"],
                 "target_feats":config["feats"]["target_feats"],
                 "static_feats":config["feats"]["static_feats"],
-                "static_int_feats":config["feats"]["static_feats"],
+                "static_int_feats":config["feats"]["static_int_feats"],
                 "static_embed_maps":config["feats"]["static_embed_maps"],
                 "norm_coeffs":config["feats"]["norm_coeffs"],
 
@@ -206,41 +209,83 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
             min_delta=config["setup"].get("early_stop_delta", 0.),
             )
 
+    model = model.to(device)
+
+    ## initialize the model directory, config json, and metric storage json.
+    model_dir = model_parent_dir.joinpath(config["name"])
+    assert not model_dir.exists(), f"Model directory exists: {model_dir.name}"
+    model_dir.mkdir()
+    config_path = model_dir.joinpath(f"{config['name']}_config.json")
+    json.dump(config, config_path.open("w"), indent=2)
+    metric_json_path = model_dir.joinpath(
+            f"{config['name']}_metrics_simple.json")
+
     ## run the training loop
     early_stop = False
     dl_train_iter = iter(dl_train)
     dl_val_iter = iter(dl_val)
     metric_values = {
             "train":{mk:[] for mk in metrics.keys()},
-            "val":{mk:[] for mk in metrics.keys()}
+            "val":{mk:[] for mk in metrics.keys()},
             "train_epochs":[],
             "val_epochs":[],
+            "lr":[],
             }
-    assert config["setup"]["loss_metric"] in metric_values.keys()
+    min_loss = float("inf")
+    assert config["setup"]["loss_metric"] in metric_values["train"].keys(),\
+            f"{loss_metric=} must match the key of a defined metric."
     for epoch in range(config["setup"]["max_epochs"]):
+        if debug:
+            print(f"Starting Epoch {epoch}")
         ## train on a series of batches for this epoch.
         epoch_metrics = {mk:[] for mk in metrics.keys()}
         for bix in range(config["setup"]["batches_per_epoch"]):
             try:
                 xt,yt,at = next(dl_train_iter)
             except StopIteration:
+                if debug:
+                    print(f"Re-initializing training generator!")
                 dl_train_iter = iter(dl_train)
                 xt,yt,at = next(dl_train_iter)
-            w,h,s,si = xt
-            pt = model(w, h, s, si)
+            wt,ht,st,sit,initt = xt
+            yt, = yt
+            wt = wt.to(device)
+            ht = ht.to(device)
+            st = st.to(device)
+            sit = [X.to(device) for X in sit]
+            yt = yt.to(device)
+            pt = model(wt, ht, st, sit, yt, device=device)
             for mk,metric in metrics.items():
                 tmpm = metric(pt,yt)
                 if mk==config["setup"]["loss_metric"]:
                     optimizer.zero_grad()
                     ## calculate gradients wrt parameter tensors
-                    loss.backward()
+                    tmpm.backward()
                     ## use gradients to update parameter tensors
                     optimizer.step()
-                epoch_metrics[mk].append(tmpm)
+                epoch_metrics[mk].append(tmpm.cpu().detach().numpy())
+        metric_pkl = model_dir.joinpath(
+                f"{config['name']}_metrics_train_{epoch:04}.pkl")
+        pkl.dump(epoch_metrics, metric_pkl.open("wb"))
         ## for now, store every batch's metrics. maybe consider average later.
         for mk,epms in epoch_metrics.items():
-            metric_values["train"][mk].append(epms)
+            metric_values["train"][mk].append(
+                    tuple(map(float, (np.average(epms), np.std(epms))))
+                    )
         metric_values["train_epochs"].append(epoch)
+        metric_values["lr"].append(schedule.get_last_lr())
+        schedule.step()
+
+        ## save the model if training loss went down. validation is more
+        ## traditional, but I can manually select the model at the bottom of
+        ## the valley of generality
+        lm = config["setup"]["loss_metric"]
+        if min_loss > metric_values["train"][lm][-1][0]:
+            torch.save(
+                    model.state_dict(),
+                    model_dir.joinpath(
+                        f"{config['name']}_state_{epoch:04}.pwf")
+                    )
 
         ## run validation every val_frequency epochs
         if epoch % config["setup"]["val_frequency"] == 0:
@@ -250,120 +295,39 @@ def train_single(config:dict, sequences_dir:Path, model_parent_dir:Path,
                     try:
                         xv,yv,av = next(dl_val_iter)
                     except StopIteration:
+                        if debug:
+                            print(f"Re-initializing validation generator!")
                         dl_val_iter = iter(dl_val)
                         xv,yv,av = next(dl_val_iter)
-                    wv,hv,sv,siv = xv
-                    pv = model(wv, hv, sv, siv)
+                    wv,hv,sv,siv,initv = xv
+                    yv, = yv
+                    wv = wv.to(device)
+                    hv = hv.to(device)
+                    sv = sv.to(device)
+                    siv = [X.to(device) for X in siv]
+                    yv = yv.to(device)
+                    pv = model(wv, hv, sv, siv, yv, device=device)
 
                     for mk,metric in metrics.items():
                         tmpm = metric(pv,yv)
-                        val_metrics[mk].append(tmpm)
+                        val_metrics[mk].append(tmpm.cpu().detach().numpy())
+
+                metric_pkl = model_dir.joinpath(
+                        f"{config['name']}_metrics_val_{epoch:04}.pkl")
+                pkl.dump(val_metrics, metric_pkl.open("wb"))
 
                 ## update validation metrics for this epoch
-                for mk,epms in val_metrics.keys():
-                    metric_values["val"][mk].append(epms)
+                for mk,epms in val_metrics.items():
+                    metric_values["val"][mk].append(
+                            tuple(map(float, (np.average(epms), np.std(epms))))
+                            )
                 metric_values["val_epochs"].append(epoch)
 
             ## check for early stopping given all batches in this epoch
             early_stop = stopper.early_stop(np.average(
                 metric_values["val"][config["setup"]["loss_metric"]][-1]
                 ))
+        json.dump(metric_values, metric_json_path.open("w"), indent=2)
         if early_stop:
+            print(f"Early stop triggered!")
             break
-
-if __name__=="__main__":
-    ## config template
-    info_era5 = json.load(
-            proj_root.joinpath("data/list_feats_era5.json").open("r"))
-    config = {
-        "feats":{
-            "window_feats":[
-                "pres","tmp","dwpt","apcp","alb",
-                "dlwrf","dswrf","weasd","windmag",
-                "vsm-07", "vsm-28", "vsm-100", "vsm-289",
-                ],
-            "horizon_feats":[
-                "pres","tmp","dwpt","apcp","alb",
-                "dlwrf","dswrf","weasd","windmag",
-                ],
-            "target_feats":[
-                "diff vsm-07","diff vsm-28","diff vsm-100","diff vsm-289",
-                ],
-            "static_feats":["geopot","lakec","vc-high","vc-low",],
-            "static_int_feats":["soilt","vt-high","vt-low"],
-            "aux_dynamic_feats":["evp","lhtfl"],
-            "aux_static_feats":["vidxs","hidxs"],
-            "derived_feats":info_era5["derived-feats"],
-            "static_embed_maps":{
-                "soilt":[0, 1, 2, 3, 4, 5, 6, 7],
-                "vt-low":[0,  1,  2,  7,  9, 10, 11, 13, 16, 17],
-                "vt-high":[0,  3,  5,  6, 18, 19],
-                },
-            "window_size":24,
-            "horizon_size":72,
-            "norm_coeffs":info_era5["norm-coeffs"],
-            },
-        "data":{
-            "train":{
-                "shuffle":True,
-                "sample_cutoff":.66,
-                "sample_across_files":True,
-                "sample_under_cutoff":True,
-                "sample_separation":157,
-                "random_offset":True,
-                "chunk_pool_count":48,
-                "buf_size_mb":4096,
-                "buf_slots":48,
-                "buf_policy":0,
-                "batch_size":256,
-                "num_workers":5,
-                "prefetch_factor":4,
-                },
-            "val":{
-                "shuffle":True,
-                "sample_cutoff":.66,
-                "sample_across_files":True,
-                "sample_under_cutoff":False,
-                "sample_separation":157,
-                "random_offset":True,
-                "chunk_pool_count":48,
-                "buf_size_mb":4096,
-                "buf_slots":48,
-                "buf_policy":0,
-                "batch_size":256,
-                "num_workers":5,
-                "prefetch_factor":4,
-                },
-            },
-        "metrics":{},
-        "model":{
-            "type":"lstm-s2s",
-            "args":{
-                "static_int_encoding_size":6,
-                "num_hidden_feats":32,
-                "num_hidden_layers":4,
-                "normalized_inputs":True,
-                "normalized_outputs":False,
-                "cycle_targets":[
-                    "diff vsm-07","diff vsm-28","diff vsm-100","diff vsm-289",
-                    ],
-                "teacher_forcing":True,
-                },
-            },
-        "setup":{
-            "loss_metric":None,
-            "optimizer_type":None,
-            "optimizer_args":{},
-            "schedule_type":None,
-            "schedule_args":None,
-            "initial_lr":None,
-            "early_stop_patience":None,
-            "early_stop_delta":None,
-            "max_epochs":None,
-            "batches_per_epoch":None,
-            "val_frequency":None,
-            },
-        "seed":None,
-        "name":None,
-        "notes":None,
-        }

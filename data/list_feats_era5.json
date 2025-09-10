@@ -15,10 +15,10 @@
             "landmask":"ratio"
         },
         "dynamic":{
-            "swm-7":"m^3/m^3",
-            "swm-28":"m^3/m^3",
-            "swm-100":"m^3/m^3",
-            "swm-289":"m^3/m^3",
+            "swm-7":"kg/m^2",
+            "swm-28":"kg/m^2",
+            "swm-100":"kg/m^2",
+            "swm-289":"kg/m^2",
             "tsoil-7":"K",
             "tsoil-28":"K",
             "tsoil-100":"K",
@@ -237,6 +237,7 @@
         "lakec":"Lake Cover",
         "glacmask":"Glacier Mask",
         "landmask":"Land-Sea Mask",
+
         "swm-7":"0-7cm Volumetric Soil Moisture",
         "swm-28":"7-28cm Volumetric Soil Moisture",
         "swm-100":"28-100cm Volumetric Soil Moisture",
@@ -264,7 +265,6 @@
         "swnet":"Net Shortwave Radiation",
         "lwnet":"Net Longwave Radiation",
         "alb":"Surface Albedo",
-
         "wm-skin":"Skin Reservoir Content",
         "roff-all":"Total Runoff",
         "evp-snow":"Snow Evaporation",

@@ -17,7 +17,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             seed=None, sample_cutoff=1, sample_across_files=True,
             sample_under_cutoff=True, sample_separation=1, random_offset=True,
             chunk_pool_count=4, buf_size_mb=1024, buf_slots=128, buf_policy=0,
-            debug=False):
+            out_dtype="f4", debug=False):
         """
 
          o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o
@@ -84,6 +84,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             will be released when needed, and closer to one the least recently
             *fully utilized* chunk will be released. Closer to one is more
             efficient if it is rare that the same chunk will be accessed again.
+        :@param out_dtype: string-serialized dtype of sample outputs, ex "f2"
         :@param debug: If True, print general info and processing time data.
 
         --( to implement )--
@@ -125,6 +126,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
         self._buf_size_mb = buf_size_mb
         self._buf_slots = buf_slots
         self._buf_policy = buf_policy
+        self._out_dtype = np.dtype(out_dtype)
         self._debug = debug
 
         ## include an additional element in case window diffs requested.
@@ -313,6 +315,10 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             dsample = self._tgs[tg]["dynamic"][ts_extended,ps,:]
             ssample = self._tgs[tg]["static"][ps,:]
             tsample = self._tgs[tg]["time"][ts_extended][1:]
+            dsample = dsample.astype(np.float32)
+            ssample = ssample.astype(np.float32)
+            tsample = tsample.astype(np.float32)
+            #print(dsample.dtype,ssample.dtype)
             ## If this chunk overlaps the next timegrid, extract the
             ## corresponding first sample size in the next one
             if across and not next_tg is None:
@@ -356,6 +362,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             ix_fl = self._w_feats.index(fl)
             tmp_w[:,1:,ix_fl] = np.diff(tmp_w[...,ix_fl], axis=1)
         tmp_w = (tmp_w[:,1:]-self._norms["w"][0])/self._norms["w"][1]
+        tmp_w = tmp_w.astype(self._out_dtype)
 
         tmp_h = _calc_feat_array(
                 src_array=dsamples[:,-self._h_size-1:],
@@ -367,6 +374,7 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             ix_fl = self._h_feats.index(fl)
             tmp_h[:,1:,ix_fl] = np.diff(tmp_h[...,ix_fl], axis=1)
         tmp_h = (tmp_h[:,1:]-self._norms["h"][0])/self._norms["h"][1]
+        tmp_h = tmp_h.astype(self._out_dtype)
 
         tmp_y = _calc_feat_array(
                 src_array=dsamples[:,-self._h_size-1:],
@@ -380,7 +388,9 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
         ## extract undifferentiated initial vector
         tmp_init = tmp_y[:,0][:,None]
         tmp_init = (tmp_init-self._norms["yinit"][0])/self._norms["yinit"][1]
+        tmp_init = tmp_init.astype(self._out_dtype)
         tmp_y = (tmp_y[:,1:]-self._norms["y"][0])/self._norms["y"][1]
+        tmp_y = tmp_y.astype(self._out_dtype)
 
         tmp_ad = _calc_feat_array(
                 src_array=dsamples,
@@ -392,21 +402,24 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             ix_fl = self._ad_feats.index(fl)
             tmp_ad[1:,:,ix_fl] = np.diff(tmp_ad[...,ix_fl], axis=0)
         tmp_ad = tmp_ad[:,1:] ## don't normalize auxiliary data
+        tmp_ad = tmp_ad.astype(self._out_dtype)
 
         ## extract float-style static data for each sample
         tmp_s = np.stack([
             ssamples[:,fix] for fix in self._feat_info["s"][0]
             ], axis=-1)
         tmp_s = (tmp_s-self._norms["s"][0])/self._norms["s"][1]
+        tmp_s = tmp_s.astype(self._out_dtype)
         tmp_as = np.stack([
             ssamples[:,fix] for fix in self._feat_info["as"][0]
             ], axis=-1)
+        tmp_as = tmp_as.astype(self._out_dtype)
 
         ## extract and one-hot encode int-style static data
         tmp_si = [
                 np.zeros(
                     (ssamples.shape[0], len(self._si_embed_maps[fl])),
-                    dtype=np.uint8)
+                    dtype=np.float32)
                 for fl in self._si_feats
                 ]
         try:
