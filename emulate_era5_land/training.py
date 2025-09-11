@@ -41,17 +41,90 @@ schedule_options = {
         "coswarmrestart":torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
         }
 
+dataset_options = {
+        "stsd":SparseTimegridSampleDataset,
+        }
+
 def get_model(model_type:str, model_args:dict={}):
-    assert model_type in model_options.keys()
+    assert model_type in model_options.keys(),model_options.keys()
     return model_options.get(model_type)(**model_args)
 
 def get_optimizer(optimizer_type:str, optimizer_args:dict={}):
-    assert optimizer_type in optimizer_options.keys()
+    assert optimizer_type in optimizer_options.keys(),optimizer_options.keys()
     return optimizer_options.get(optimizer_type)(**optimizer_args)
 
 def get_lr_schedule(schedule_type:str, schedule_args:dict={}):
-    assert schedule_type in schedule_options.keys()
+    assert schedule_type in schedule_options.keys(),schedule_options.keys()
     return schedule_options.get(schedule_type)(**schedule_args)
+
+def get_dataset(dataset_type:str, dataset_args:dict={}):
+    assert dataset_type in dataset_options.keys(),dataset_options.keys()
+    return dataset_options.get(dataset_type)(**dataset_args)
+
+def get_datasets_from_config(config):
+    """
+    Instantiate dataset for each of the datasets under 'data' in the config,
+    and return the result as a dictionary of Dataset objects
+
+    TODO: generalize so that the dataset type is determined dynamically
+        rather than assuming SparseTimegridSampleDataset
+    """
+    out_dss = {}
+    for dk,dc in config["data"].items():
+        out_dss[dk] = SparseTimegridSampleDataset(
+            timegrids=dc["data"][dk]["timegrids"],
+
+            ## feature configuration
+            window_feats=dc["feats"]["window_feats"],
+            horizon_feats=dc["feats"]["horizon_feats"],
+            target_feats=dc["feats"]["target_feats"],
+            static_feats=dc["feats"]["static_feats"],
+            static_int_feats=dc["feats"]["static_int_feats"],
+            aux_dynamic_feats=dc["feats"]["aux_dynamic_feats"],
+            aux_static_feats=dc["feats"]["aux_static_feats"],
+            derived_feats=dc["feats"]["derived_feats"],
+            static_embed_maps=dc["feats"]["static_embed_maps"],
+            window_size=dc["feats"]["window_size"],
+            horizon_size=dc["feats"]["horizon_size"],
+            norm_coeffs=dc["feats"]["norm_coeffs"],
+
+            ## training data specific configuration
+            shuffle=dc["data"][dk]["shuffle"],
+            sample_cutoff=dc["data"][dk]["sample_cutoff"],
+            sample_across_files=dc["data"][dk]["sample_across_files"],
+            sample_under_cutoff=dc["data"][dk]["sample_under_cutoff"],
+            sample_separation=dc["data"][dk]["sample_separation"],
+            random_offset=dc["data"][dk]["random_offset"],
+            chunk_pool_count=dc["data"][dk]["chunk_pool_count"],
+            buf_size_mb=dc["data"][dk]["buf_size_mb"],
+            buf_slots=dc["data"][dk]["buf_slots"],
+            buf_policy=dc["data"][dk]["buf_policy"],
+
+            seed=dc["seed"],
+            )
+    return out_dss
+
+def get_model_from_config(config):
+    """
+    Initialize and return a
+    """
+    ## initialize the model, providing default args that would be redundant
+    return get_model(
+            model_type=config["model"]["type"],
+            model_args={
+                ## defaults for feature sizes to prevent repetition
+                "window_feats":config["feats"]["window_feats"],
+                "horizon_feats":config["feats"]["horizon_feats"],
+                "target_feats":config["feats"]["target_feats"],
+                "static_feats":config["feats"]["static_feats"],
+                "static_int_feats":config["feats"]["static_int_feats"],
+                "static_embed_maps":config["feats"]["static_embed_maps"],
+                "norm_coeffs":config["feats"]["norm_coeffs"],
+
+                ## user-defined other model parameters
+                **config["model"]["args"],
+                },
+            )
 
 class EarlyStopper:
     """
@@ -86,75 +159,14 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
     Dispatch the training routine for a single model configuration...
     """
     if device is None:
-        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     ## declare datasets for training and validation
-    ds_train = SparseTimegridSampleDataset(
-            timegrids=config["data"]["train"]["timegrids"],
-
-            ## feature configuration
-            window_feats=config["feats"]["window_feats"],
-            horizon_feats=config["feats"]["horizon_feats"],
-            target_feats=config["feats"]["target_feats"],
-            static_feats=config["feats"]["static_feats"],
-            static_int_feats=config["feats"]["static_int_feats"],
-            aux_dynamic_feats=config["feats"]["aux_dynamic_feats"],
-            aux_static_feats=config["feats"]["aux_static_feats"],
-            derived_feats=config["feats"]["derived_feats"],
-            static_embed_maps=config["feats"]["static_embed_maps"],
-            window_size=config["feats"]["window_size"],
-            horizon_size=config["feats"]["horizon_size"],
-            norm_coeffs=config["feats"]["norm_coeffs"],
-
-            ## training data specific configuration
-            shuffle=config["data"]["train"]["shuffle"],
-            sample_cutoff=config["data"]["train"]["sample_cutoff"],
-            sample_across_files=config["data"]["train"]["sample_across_files"],
-            sample_under_cutoff=config["data"]["train"]["sample_under_cutoff"],
-            sample_separation=config["data"]["train"]["sample_separation"],
-            random_offset=config["data"]["train"]["random_offset"],
-            chunk_pool_count=config["data"]["train"]["chunk_pool_count"],
-            buf_size_mb=config["data"]["train"]["buf_size_mb"],
-            buf_slots=config["data"]["train"]["buf_slots"],
-            buf_policy=config["data"]["train"]["buf_policy"],
-
-            seed=config["seed"],
-            )
-
-    ds_val = SparseTimegridSampleDataset(
-            timegrids=config["data"]["val"]["timegrids"],
-
-            ## feature configuration
-            window_feats=config["feats"]["window_feats"],
-            horizon_feats=config["feats"]["horizon_feats"],
-            target_feats=config["feats"]["target_feats"],
-            static_feats=config["feats"]["static_feats"],
-            static_int_feats=config["feats"]["static_int_feats"],
-            aux_dynamic_feats=config["feats"]["aux_dynamic_feats"],
-            aux_static_feats=config["feats"]["aux_static_feats"],
-            derived_feats=config["feats"]["derived_feats"],
-            static_embed_maps=config["feats"]["static_embed_maps"],
-            window_size=config["feats"]["window_size"],
-            horizon_size=config["feats"]["horizon_size"],
-            norm_coeffs=config["feats"]["norm_coeffs"],
-
-            ## validation data specific configuration
-            shuffle=config["data"]["val"]["shuffle"],
-            sample_cutoff=config["data"]["val"]["sample_cutoff"],
-            sample_across_files=config["data"]["val"]["sample_across_files"],
-            sample_under_cutoff=config["data"]["val"]["sample_under_cutoff"],
-            sample_separation=config["data"]["val"]["sample_separation"],
-            random_offset=config["data"]["val"]["random_offset"],
-            chunk_pool_count=config["data"]["val"]["chunk_pool_count"],
-            buf_size_mb=config["data"]["val"]["buf_size_mb"],
-            buf_slots=config["data"]["val"]["buf_slots"],
-            buf_policy=config["data"]["val"]["buf_policy"],
-
-            seed=config["seed"],
-            )
+    datasets = get_datasets_from_config(config)
 
     ## initialize data loaders for training and validation
     dl_train = torch.utils.data.DataLoader(
-            dataset=ds_train,
+            dataset=datasets["train"],
             batch_size=config["data"]["train"]["batch_size"],
             num_workers=config["data"]["train"]["num_workers"],
             prefetch_factor=config["data"]["train"]["prefetch_factor"],
@@ -162,7 +174,7 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
             )
 
     dl_val = torch.utils.data.DataLoader(
-            dataset=ds_val,
+            dataset=datasets["val"],
             batch_size=config["data"]["val"]["batch_size"],
             num_workers=config["data"]["val"]["num_workers"],
             prefetch_factor=config["data"]["val"]["prefetch_factor"],

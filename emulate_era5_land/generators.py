@@ -5,6 +5,88 @@ import h5py
 from pathlib import Path
 from time import perf_counter
 
+from emulate_era5_land import training
+
+class PredictionDataset(torch.utils.data.IterableDataset):
+    """
+    Dataset generator that loads a model based on its training configuration,
+    runs the model, and yields the inference results alongside the inputs.
+    """
+    def __init__(self, model_path:Path, use_dataset:str=None,
+            config_override:dict=None, device=None):
+        """
+        :@param model_path: Path to the model weights, which is assumed to be
+            inside the 'model dir' containing the configuration json
+        :@param use_dataset: String key of one of the datasets configured under
+            'data' indicating which of the datasets in the config to base the
+            configuration after
+        :@param config_override: dict containing a tree of substitutions to
+            the original configuration
+        """
+        if device is None:
+            self._device = torch.device(
+                    "cuda:0" if torch.cuda.is_available() else "cpu")
+        self._model_dir = model_path.parent()
+        self._model_path = model_path
+        og_config_path = model_dir.joinpath(
+                f"{self._model_dir.name}_config.json")
+        assert self._model_path.exists(), self._model_path
+        assert og_config_path.exists(), og_config_path
+        self._og_config = json.load(og_config_path.open("r"))
+
+        co = config_override
+        for ck in ["feats", "data", "seed", "model"]:
+            if ck not in co.keys():
+                co[ck] = {}
+
+        ## update the config with the overrides
+        self._config = {
+            "feats":{
+                self._og_config["feats"],
+                **co.get("feats", {})
+                },
+            "data":{
+                use_dataset:{
+                    **self._og_config["data"].get(use_dataset, {})
+                    **co["data"].get(use_dataset, {})
+                    },
+                }
+            "seed":co.get("seed",self._og_config.get("seed")),
+            "model":{
+                "type":co["model"].get(
+                    "type", self._og_config["model"]["type"]),
+                "args":{**self._og_config["model"]["args"],
+                    **co["model"].get("args")}
+                }
+            }
+
+        assert self._config["data"]["use_dataset"],f"{use_dataset} not found!"
+
+        self._ds = training.get_datasets_from_config(self._config)[use_dataset]
+        self._model = training.get_model_from_config(self._config)
+
+        self._dl = torch.utils.data.DataLoader(
+                dataset=datasets["train"],
+                batch_size=config["data"]["train"]["batch_size"],
+                num_workers=config["data"]["train"]["num_workers"],
+                prefetch_factor=config["data"]["train"]["prefetch_factor"],
+                worker_init_fn=stsd_worker_init_fn,
+                )
+
+    def replenish_batch(self):
+        """ """
+        self._x,self._y,self._aux = next(self._dl)
+        pass
+
+    def __next__(self):
+        """ """
+        pass
+
+    def __iter__(self):
+        """ """
+        return self
+
+
 class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
     """
     PyTorch IterableDataset implementation with the ability to multiprocess

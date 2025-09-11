@@ -1,0 +1,37 @@
+#!/bin/csh
+### SLURM batch script
+
+### Email address
+#SBATCH --mail-user=mtd0012@uah.edu
+
+### queue type
+#SBATCH -p standard
+
+### TOTAL processors (number of tasks)
+#SBATCH --ntasks 13
+###SBATCH --ntasks 2
+
+### total run time estimate (D-HH:MM)
+#SBATCH -t 2-00:00
+
+### memory (MB per CPU)
+#SBATCH --mem-per-cpu=4G
+
+### Mail to user on job done and fail
+#SBATCH --mail-type=END,FAIL
+
+### Job name
+#SBATCH -J mkenv
+
+### Ouput files
+###SBATCH --open-mode=append ### Don't overwrite existing files
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_make_env.out # STDOUT
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_make_env.err # STDERR
+
+cd /rhome/mdodson/emulate-era5-land
+
+#Run code
+set runcmd = /nas/rhome/mdodson/.micromamba/envs/learn-torch/bin/python
+
+module load cuda/12.4
+micromamba -y create -n learn-torch-meteor pytorch pytorch-cuda=12.4 -c pytorch -c nvidia

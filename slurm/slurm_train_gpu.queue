@@ -1,0 +1,47 @@
+#!/bin/csh
+### SLURM batch script
+
+### Email address
+#SBATCH --mail-user=mtd0012@uah.edu
+
+### TOTAL processors (number of tasks)
+#SBATCH --ntasks 14
+
+### total run time estimate (D-HH:MM)
+#SBATCH -t 3-00:00
+
+### memory (MB per CPU)
+#SBATCH --mem-per-cpu=8G
+
+### Mail to user on job done and fail
+#SBATCH --mail-type=END,FAIL
+
+### Partition (queue), select shared for GPU
+### Optionally specify a GPU type: --gres=gpu:rtx5000:1 or --gres=gpu:a100:1
+#SBATCH -p standard --gres=gpu:1
+###SBATCH -p shared --gres=gpu:1
+
+#SBATCH -J acclstm-rsm-16_train
+###SBATCH --open-mode=append ### Don't overwrite existing files
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-16.out
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-16.err
+
+##module load cuda/11.8
+module load cuda/12.4
+
+### Set the mamba environment path to your environment
+set mamba_env_path = /rhome/mdodson/.micromamba/envs/learn-torch-meteor
+
+### Set dynamic link loader path variable to include CUDA and bins from mamba
+#setenv LD_LIBRARY_PATH ${LD_LIBRARY_PATH}:${mamba_env_path}/lib
+setenv LD_LIBRARY_PATH ${mamba_env_path}/lib
+
+set python_cmd = ${mamba_env_path}/bin/python
+
+echo $LD_LIBRARY_PATH
+echo $python_cmd
+nvidia-smi
+
+cd /rhome/mdodson/emulate-era5-land
+
+${python_cmd} -u scripts/train_single.py

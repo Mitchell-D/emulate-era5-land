@@ -102,9 +102,10 @@ config = {
             "normalized_inputs":True,
             "normalized_outputs":True,
             "cycle_targets":[
-                "diff swm-7","diff swm-28","diff swm-100","diff swm-289",
+                #"diff swm-7","diff swm-28","diff swm-100","diff swm-289",
+                "swm-7","swm-28","swm-100","swm-289",
                 ],
-            "teacher_forcing":False,
+            "teacher_forcing":True,
             },
         },
     "setup":{
@@ -128,8 +129,8 @@ config = {
         "val_frequency":2,
         },
     "seed":200007221750,
-    "name":"acclstm-era5-swm-15",
-    "notes":"same as v9 except no teacher forcing",
+    "name":"acclstm-era5-swm-16",
+    "notes":"same as v9 except directly predicting swm",
     }
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')

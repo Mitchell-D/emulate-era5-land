@@ -1,0 +1,33 @@
+#!/bin/csh
+### SLURM batch script
+
+### Email address
+#SBATCH --mail-user=mtd0012@uah.edu
+
+### TOTAL processors (number of tasks)
+#SBATCH --ntasks 17
+
+### total run time estimate (D-HH:MM)
+#SBATCH -t 3-00:00
+
+### memory (MB per CPU)
+#SBATCH --mem-per-cpu=8G
+
+### Mail to user on job done and fail
+#SBATCH --mail-type=END,FAIL
+
+#SBATCH -p standard
+
+#SBATCH -J acclstm-swm-12
+###SBATCH --open-mode=append ### Don't overwrite existing files
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-12.out
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-12.err
+
+### Set the mamba environment path to your environment
+set mamba_env_path = /rhome/mdodson/.micromamba/envs/learn-torch
+set runcmd = ${mamba_env_path}/bin/python
+
+cd /rhome/mdodson/emulate-era5-land
+
+${runcmd} -u scripts/train_single.py
+##${runcmd} -u train_variations.py
