@@ -142,16 +142,17 @@ class AccLSTM(tnn.Module):
             static = (static-self.norm["s"][0])/self.norm["s"][1]
             if not target is None:
                 target = (target-self.norm["y"][0])/self.norm["y"][1]
-            window = window.to(_dt)
-            horizon = horizon.to(_dt)
-            static = static.to(_dt)
+
+        window = window.to(_dt).to(device)
+        horizon = horizon.to(_dt).to(device)
+        static = static.to(_dt).to(device)
+        static_int = torch.cat(static_int, axis=-1).to(device)
 
         ## create static vectors, embed them, and concatenate with window input
-        si_embed = self._embed(torch.cat(static_int, axis=-1))
+        si_embed = self._embed(static_int)
         s = torch.cat([static,si_embed], axis=-1)[:,None]
         w = torch.cat([s.expand(-1,window.size(1),-1), window], axis=-1)
 
-        w = w.to(device)
         if self._dcf_norms.device != device:
             self._dcf_norms = self._dcf_norms.to(device)
 
@@ -231,3 +232,27 @@ class AccLSTM(tnn.Module):
         if not self._norm_out:
             P = P*self.norms["y"][1].to(device)+self.norms["y"][0].to(device)
         return P
+
+model_options = {
+    "acclstm":AccLSTM
+    }
+
+def get_model_from_config(config):
+    """
+    Initialize and return an instance of the configured model
+    """
+    assert config["model"]["type"] in model_options.keys(),model_options.keys()
+    ## initialize the model, providing default args that would be redundant
+    return model_options[config["model"]["type"]](**{
+        ## defaults for feature sizes to prevent repetition
+        "window_feats":config["feats"]["window_feats"],
+        "horizon_feats":config["feats"]["horizon_feats"],
+        "target_feats":config["feats"]["target_feats"],
+        "static_feats":config["feats"]["static_feats"],
+        "static_int_feats":config["feats"]["static_int_feats"],
+        "static_embed_maps":config["feats"]["static_embed_maps"],
+        "norm_coeffs":config["feats"]["norm_coeffs"],
+        ## user-defined other model parameters
+        **config["model"]["args"],
+        })
+

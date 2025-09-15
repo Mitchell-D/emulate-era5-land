@@ -11,15 +11,12 @@ from pathlib import Path
 import torch
 from emulate_era5_land.generators import SparseTimegridSampleDataset
 from emulate_era5_land.generators import stsd_worker_init_fn
-from emulate_era5_land.models import AccLSTM
+from emulate_era5_land.generators import get_datasets_from_config
+from emulate_era5_land.models import AccLSTM,get_model_from_config
 
 metric_options = {
         "mae":torch.nn.L1Loss,
         "mse":torch.nn.MSELoss,
-        }
-
-model_options = {
-        "acclstm":AccLSTM
         }
 
 optimizer_options = {
@@ -41,14 +38,6 @@ schedule_options = {
         "coswarmrestart":torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
         }
 
-dataset_options = {
-        "stsd":SparseTimegridSampleDataset,
-        }
-
-def get_model(model_type:str, model_args:dict={}):
-    assert model_type in model_options.keys(),model_options.keys()
-    return model_options.get(model_type)(**model_args)
-
 def get_optimizer(optimizer_type:str, optimizer_args:dict={}):
     assert optimizer_type in optimizer_options.keys(),optimizer_options.keys()
     return optimizer_options.get(optimizer_type)(**optimizer_args)
@@ -56,75 +45,6 @@ def get_optimizer(optimizer_type:str, optimizer_args:dict={}):
 def get_lr_schedule(schedule_type:str, schedule_args:dict={}):
     assert schedule_type in schedule_options.keys(),schedule_options.keys()
     return schedule_options.get(schedule_type)(**schedule_args)
-
-def get_dataset(dataset_type:str, dataset_args:dict={}):
-    assert dataset_type in dataset_options.keys(),dataset_options.keys()
-    return dataset_options.get(dataset_type)(**dataset_args)
-
-def get_datasets_from_config(config):
-    """
-    Instantiate dataset for each of the datasets under 'data' in the config,
-    and return the result as a dictionary of Dataset objects
-
-    TODO: generalize so that the dataset type is determined dynamically
-        rather than assuming SparseTimegridSampleDataset
-    """
-    out_dss = {}
-    for dk,dc in config["data"].items():
-        out_dss[dk] = SparseTimegridSampleDataset(
-            timegrids=dc["data"][dk]["timegrids"],
-
-            ## feature configuration
-            window_feats=dc["feats"]["window_feats"],
-            horizon_feats=dc["feats"]["horizon_feats"],
-            target_feats=dc["feats"]["target_feats"],
-            static_feats=dc["feats"]["static_feats"],
-            static_int_feats=dc["feats"]["static_int_feats"],
-            aux_dynamic_feats=dc["feats"]["aux_dynamic_feats"],
-            aux_static_feats=dc["feats"]["aux_static_feats"],
-            derived_feats=dc["feats"]["derived_feats"],
-            static_embed_maps=dc["feats"]["static_embed_maps"],
-            window_size=dc["feats"]["window_size"],
-            horizon_size=dc["feats"]["horizon_size"],
-            norm_coeffs=dc["feats"]["norm_coeffs"],
-
-            ## training data specific configuration
-            shuffle=dc["data"][dk]["shuffle"],
-            sample_cutoff=dc["data"][dk]["sample_cutoff"],
-            sample_across_files=dc["data"][dk]["sample_across_files"],
-            sample_under_cutoff=dc["data"][dk]["sample_under_cutoff"],
-            sample_separation=dc["data"][dk]["sample_separation"],
-            random_offset=dc["data"][dk]["random_offset"],
-            chunk_pool_count=dc["data"][dk]["chunk_pool_count"],
-            buf_size_mb=dc["data"][dk]["buf_size_mb"],
-            buf_slots=dc["data"][dk]["buf_slots"],
-            buf_policy=dc["data"][dk]["buf_policy"],
-
-            seed=dc["seed"],
-            )
-    return out_dss
-
-def get_model_from_config(config):
-    """
-    Initialize and return a
-    """
-    ## initialize the model, providing default args that would be redundant
-    return get_model(
-            model_type=config["model"]["type"],
-            model_args={
-                ## defaults for feature sizes to prevent repetition
-                "window_feats":config["feats"]["window_feats"],
-                "horizon_feats":config["feats"]["horizon_feats"],
-                "target_feats":config["feats"]["target_feats"],
-                "static_feats":config["feats"]["static_feats"],
-                "static_int_feats":config["feats"]["static_int_feats"],
-                "static_embed_maps":config["feats"]["static_embed_maps"],
-                "norm_coeffs":config["feats"]["norm_coeffs"],
-
-                ## user-defined other model parameters
-                **config["model"]["args"],
-                },
-            )
 
 class EarlyStopper:
     """
@@ -185,22 +105,8 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
     metrics = {k:metric_options[k](**v) for k,v in config["metrics"].items()}
 
     ## initialize the model, providing default args that would be redundant
-    model = get_model(
-            model_type=config["model"]["type"],
-            model_args={
-                ## defaults for feature sizes to prevent repetition
-                "window_feats":config["feats"]["window_feats"],
-                "horizon_feats":config["feats"]["horizon_feats"],
-                "target_feats":config["feats"]["target_feats"],
-                "static_feats":config["feats"]["static_feats"],
-                "static_int_feats":config["feats"]["static_int_feats"],
-                "static_embed_maps":config["feats"]["static_embed_maps"],
-                "norm_coeffs":config["feats"]["norm_coeffs"],
+    model = get_model_from_config(config)
 
-                ## user-defined other model parameters
-                **config["model"]["args"],
-                },
-            )
     optimizer = get_optimizer(
             optimizer_type=config["setup"]["optimizer_type"],
             optimizer_args={
@@ -251,6 +157,7 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
             print(f"Starting Epoch {epoch}")
         ## train on a series of batches for this epoch.
         epoch_metrics = {mk:[] for mk in metrics.keys()}
+        model.train()
         for bix in range(config["setup"]["batches_per_epoch"]):
             try:
                 xt,yt,at = next(dl_train_iter)
@@ -302,6 +209,7 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
         ## run validation every val_frequency epochs
         if epoch % config["setup"]["val_frequency"] == 0:
             val_metrics = {mk:[] for mk in metrics.keys()}
+            model.eval()
             with torch.no_grad():
                 for bix in range(config["setup"]["batches_per_epoch"]):
                     try:

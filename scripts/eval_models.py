@@ -13,7 +13,7 @@ if __name__=="__main__":
     model_name = "acclstm-era5-swm-9_state_0069.pwf"
 
     eval_tgs = [
-            proj_root.joinpath("data/timegrids/timegrid_era5_{year}.h5")
+            proj_root.joinpath(f"data/timegrids/timegrid_era5_{year}.h5")
             for year in range(2018,2024)
             ]
     assert all([tg.exists() for tg in eval_tgs])
@@ -22,6 +22,9 @@ if __name__=="__main__":
             model_path=model_dir.joinpath(model_name),
             use_dataset="eval",
             config_override={
+                "feats":{
+                    "horizon_size":336,
+                    },
                 "data":{
                     "eval":{
                         "timegrids":eval_tgs,
@@ -43,3 +46,7 @@ if __name__=="__main__":
                     },
                 },
             )
+
+    for i in range(32):
+        x,y,a,p = next(pds)
+        print(p[0].shape)

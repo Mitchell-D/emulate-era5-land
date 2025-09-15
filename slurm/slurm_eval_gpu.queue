@@ -5,7 +5,7 @@
 #SBATCH --mail-user=mtd0012@uah.edu
 
 ### queue type
-#SBATCH -p standard
+#SBATCH -p standard --gres=gpu:1
 
 ### TOTAL processors (number of tasks)
 #SBATCH --ntasks 9
@@ -34,10 +34,21 @@
 #SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_models.out
 #SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_models.err
 
-cd /rhome/mdodson/emulate-era5-land
+##module load cuda/11.8
+module load cuda/12.4
 
 ## Run code
-set runcmd = /rhome/mdodson/.micromamba/envs/learn-torch/bin/python
+set runcmd =  /rhome/mdodson/.micromamba/envs/learn-torch-meteor/bin/python
+
+### Set dynamic link loader path variable to include CUDA and bins from mamba
+#setenv LD_LIBRARY_PATH ${LD_LIBRARY_PATH}:${mamba_env_path}/lib
+setenv LD_LIBRARY_PATH ${runcmd}/lib
+
+echo $LD_LIBRARY_PATH
+nvidia-smi
+
+cd /rhome/mdodson/emulate-era5-land
+
 #${runcmd} -u scripts/test_generators.py
 ##${runcmd} -u scripts/eval_gridstats.py
 ${runcmd} -u scripts/eval_models.py

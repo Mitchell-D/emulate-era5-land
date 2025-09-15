@@ -5,7 +5,7 @@ import h5py
 from pathlib import Path
 from time import perf_counter
 
-from emulate_era5_land import training
+from emulate_era5_land.models import get_model_from_config
 
 class PredictionDataset(torch.utils.data.IterableDataset):
     """
@@ -21,66 +21,102 @@ class PredictionDataset(torch.utils.data.IterableDataset):
             'data' indicating which of the datasets in the config to base the
             configuration after
         :@param config_override: dict containing a tree of substitutions to
-            the original configuration
+            the original configuration. Only substitutions to the 'feats',
+            'data', and 'seed' fields are supported; it doesn't make sense to
+            modify any of the others after training. Use the feats to add
+            auxiliary features or change the window/horizon size, and use the
+            data field to configure an evaluation generator.
         """
         if device is None:
             self._device = torch.device(
                     "cuda:0" if torch.cuda.is_available() else "cpu")
-        self._model_dir = model_path.parent()
+        else:
+            self._device = device
+        self._model_dir = model_path.parent
         self._model_path = model_path
-        og_config_path = model_dir.joinpath(
+        og_config_path = self._model_dir.joinpath(
                 f"{self._model_dir.name}_config.json")
         assert self._model_path.exists(), self._model_path
         assert og_config_path.exists(), og_config_path
         self._og_config = json.load(og_config_path.open("r"))
 
         co = config_override
-        for ck in ["feats", "data", "seed", "model"]:
-            if ck not in co.keys():
-                co[ck] = {}
 
         ## update the config with the overrides
         self._config = {
             "feats":{
-                self._og_config["feats"],
+                **self._og_config["feats"],
                 **co.get("feats", {})
                 },
             "data":{
                 use_dataset:{
-                    **self._og_config["data"].get(use_dataset, {})
+                    **self._og_config["data"].get(use_dataset, {}),
                     **co["data"].get(use_dataset, {})
                     },
-                }
-            "seed":co.get("seed",self._og_config.get("seed")),
-            "model":{
-                "type":co["model"].get(
-                    "type", self._og_config["model"]["type"]),
-                "args":{**self._og_config["model"]["args"],
-                    **co["model"].get("args")}
-                }
+                },
+            "metrics":self._og_config.get("metrics"),
+            "model":self._og_config.get("model"),
+            "setup":self._og_config.get("setup"),
+            "seed":co.get("seed", self._og_config.get("seed")),
+            "name":self._og_config.get("name"),
+            "notes":self._og_config.get("notes")
             }
 
-        assert self._config["data"]["use_dataset"],f"{use_dataset} not found!"
+        assert self._config["data"][use_dataset],f"{use_dataset} not found!"
 
-        self._ds = training.get_datasets_from_config(self._config)[use_dataset]
-        self._model = training.get_model_from_config(self._config)
+        self._ds = get_datasets_from_config(self._config)[use_dataset]
+        self._model = get_model_from_config(self._config)
+        self._model.load_state_dict(
+                torch.load(self._model_path, weights_only=True))
+        self._model = self._model.to(self._device)
+        self._model.eval()
 
-        self._dl = torch.utils.data.DataLoader(
-                dataset=datasets["train"],
-                batch_size=config["data"]["train"]["batch_size"],
-                num_workers=config["data"]["train"]["num_workers"],
-                prefetch_factor=config["data"]["train"]["prefetch_factor"],
+        self._dl = iter(torch.utils.data.DataLoader(
+                dataset=self._ds,
+                batch_size=self._config["data"][use_dataset]["batch_size"],
+                num_workers=self._config["data"][use_dataset]["num_workers"],
+                prefetch_factor= \
+                        self._config["data"][use_dataset]["prefetch_factor"],
                 worker_init_fn=stsd_worker_init_fn,
-                )
+                ))
+        self._cur_ix = None
 
-    def replenish_batch(self):
+    def _replenish_batch(self):
         """ """
-        self._x,self._y,self._aux = next(self._dl)
-        pass
+        x,y,aux = next(self._dl)
+        w,h,s,si,init = x
+        p = self._model(w, h, s, si, device=self._device)
+        self._cur_ix = 0
+        self._cur_sample = ((w, h, s, si, init), y, aux, (p,))
+        self._cur_bs = w.shape[0]
 
     def __next__(self):
         """ """
-        pass
+        if self._cur_ix is None or self._cur_ix==self._cur_bs-1:
+            self._replenish_batch()
+        cur = (
+                (
+                    self._cur_sample[0][0][self._cur_ix],
+                    self._cur_sample[0][1][self._cur_ix],
+                    self._cur_sample[0][2][self._cur_ix],
+                    tuple(v[self._cur_ix] for v in self._cur_sample[0][3]),
+                    self._cur_sample[0][4][self._cur_ix],
+                    ),
+                (
+                    self._cur_sample[1][0][self._cur_ix],
+                    ),
+                (
+                    self._cur_sample[2][0][self._cur_ix],
+                    self._cur_sample[2][1][self._cur_ix],
+                    self._cur_sample[2][2][self._cur_ix],
+                    ),
+                (
+                    self._cur_sample[3][0][self._cur_ix],
+
+                    ),
+                )
+        self._cur_ix += 1
+        return cur
 
     def __iter__(self):
         """ """
@@ -771,6 +807,53 @@ def _calc_feat_array(src_array, static_array,
             print(e)
             raise e
     return sf_subset
+
+dataset_options = {
+    "stsd":SparseTimegridSampleDataset,
+    }
+
+def get_datasets_from_config(config):
+    """
+    Instantiate dataset for each of the datasets under 'data' in the config,
+    and return the result as a dictionary of Dataset objects
+
+    TODO: generalize so that the dataset type is determined dynamically
+        rather than assuming SparseTimegridSampleDataset
+    """
+    out_dss = {}
+    for dk,dc in config["data"].items():
+        out_dss[dk] = SparseTimegridSampleDataset(
+            timegrids=dc["timegrids"],
+
+            ## feature configuration
+            window_feats=config["feats"]["window_feats"],
+            horizon_feats=config["feats"]["horizon_feats"],
+            target_feats=config["feats"]["target_feats"],
+            static_feats=config["feats"]["static_feats"],
+            static_int_feats=config["feats"]["static_int_feats"],
+            aux_dynamic_feats=config["feats"]["aux_dynamic_feats"],
+            aux_static_feats=config["feats"]["aux_static_feats"],
+            derived_feats=config["feats"]["derived_feats"],
+            static_embed_maps=config["feats"]["static_embed_maps"],
+            window_size=config["feats"]["window_size"],
+            horizon_size=config["feats"]["horizon_size"],
+            norm_coeffs=config["feats"]["norm_coeffs"],
+
+            ## training data specific configuration
+            shuffle=dc["shuffle"],
+            sample_cutoff=dc["sample_cutoff"],
+            sample_across_files=dc["sample_across_files"],
+            sample_under_cutoff=dc["sample_under_cutoff"],
+            sample_separation=dc["sample_separation"],
+            random_offset=dc["random_offset"],
+            chunk_pool_count=dc["chunk_pool_count"],
+            buf_size_mb=dc["buf_size_mb"],
+            buf_slots=dc["buf_slots"],
+            buf_policy=dc["buf_policy"],
+
+            seed=config["seed"],
+            )
+    return out_dss
 
 if __name__=="__main__":
     proj_dir = Path("/rhome/mdodson/emulate-era5-land/")
