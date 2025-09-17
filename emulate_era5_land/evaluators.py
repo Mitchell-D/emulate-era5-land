@@ -920,41 +920,6 @@ class EvalHorizon(Evaluator):
         """ """
         return self.from_dict(pkl.load(pkl_path.open("rb")))
 
-    def plot(self, fig_path, feat_labels:list, state_or_res, plot_spec={},
-            fill_between=True, fill_sigma=1., bar_sigma=1., class_space=1,
-            use_stdev=True, yscale="linear", show=False):
-        """  """
-        domain = np.arange(self._es_sum.shape[0]) * self._pred_coarseness
-        ps_def = {"line_width":2, "error_line_width":.5,"error_every":6,
-                "fill_alpha":.25, "xticks":domain}
-        ps = {**ps_def, **plot_spec}
-        if state_or_res=="state":
-            avg = self._es_sum / self._counts
-            var = self._es_var_sum / self._counts
-        elif state_or_res=="res":
-            avg = self._er_sum / self._counts
-            var = self._er_var_sum / self._counts
-        else:
-            raise ValueError(
-                    f"{state_or_res = } must be one of 'state' or 'res'")
-        if use_stdev:
-            var = var**(1/2)
-        plot_stats_1d(
-                x_labels=domain,
-                data_dict={
-                    f:{"means":avg[...,i], "stdevs":var[...,i]}
-                    for i,f in enumerate(feat_labels)
-                    },
-                fig_path=fig_path,
-                fill_between=fill_between,
-                fill_sigma=fill_sigma,
-                class_space=class_space,
-                bar_sigma=bar_sigma,
-                yscale=yscale,
-                plot_spec=ps,
-                show=show,
-                )
-
 class EvalTemporal(Evaluator):
     def __init__(self, use_absolute_error=False, horizon_limit=None, attrs={}):
         """ """
@@ -1216,64 +1181,11 @@ class EvalStatic(Evaluator):
         """
         return self.from_dict(pkl.load(pkl_path.open("rb")))
 
-    def plot(self, plot_index:int, state_or_res="res", fig_path=None,
-            norm_by_counts=True, show=False, plot_spec={}):
-        """
-        Generate a matrix plot of each soil and vegetation type combination
-        as calculated by this object.
-        """
-        old_ps = {"cmap":"magma", "norm":"linear", "xlabel":"Soil type",
-                "ylabel":"Surface type", "vmax":None}
-        old_ps.update(plot_spec)
-        plot_spec = old_ps
-
-        soils = ["other", "sand", "loamy-sand", "sandy-loam", "silty-loam",
-                "silt", "loam", "sandy-clay-loam", "silty-clay-loam",
-                "clay-loam", "sandy-clay", "silty-clay", "clay"]
-        vegs = ["water", "evergreen-needleleaf", "evergreen_broadleaf",
-                "deciduous-needleleaf", "deciduous-broadleaf", "mixed-cover",
-                "woodland", "wooded-grassland", "closed-shrubland",
-                "open-shrubland", "grassland", "cropland", "bare", "urban"]
-
-        static_error = {
-                "state":self._err_state[...,plot_index],
-                "res":self._err_res[...,plot_index],
-                }[state_or_res]
-        static_error /= [1,self._counts][norm_by_counts]
-        if not norm_by_counts:
-            static_error[self._counts==0] = np.nan
-
-        fig,ax = plt.subplots()
-        cb = ax.imshow(
-                static_error,
-                cmap=plot_spec.get("cmap"),
-                vmin=plot_spec.get("vmin"),
-                vmax=plot_spec.get("vmax"),
-                norm=plot_spec.get("norm"),
-                )
-        fig.colorbar(cb)
-        ax.set_xlabel(plot_spec.get("xlabel"),
-                      fontsize=plot_spec.get("label_size"))
-        ax.set_ylabel(plot_spec.get("ylabel"),
-                      fontsize=plot_spec.get("label_size"))
-        ax.set_title(plot_spec.get("title"),
-                fontsize=plot_spec.get("title_size"))
-
-        # Adding labels to the matrix
-        ax.set_yticks(range(len(vegs)), vegs)
-        ax.set_xticks(range(len(soils)), soils, rotation=45, ha='right',)
-        if not fig_path is None:
-            fig.savefig(fig_path, bbox_inches="tight")
-        if show:
-            plt.show()
-        plt.close()
-        return fig,ax
-
 class EvalJointHist(Evaluator):
-    def __init__(self, ax1_args:tuple=None, ax2_args:tuple=None,
-            covariate_feature:tuple=None, use_absolute_error=False,
-            ignore_nan=False, pred_coarseness=1, coarse_reduce_func="mean",
-            attrs={}):
+    def __init__(self, ax1:tuple, ax2:tuple, cov:tuple, dataset_feats:dict,
+                 hist_bounds:dict, hist_resolution:int=512, derived_feats={},
+                 use_absolute_error=False, ignore_nan=False, pred_coarseness=1,
+                 coarse_reduce_func="mean", attrs={}):
         """
         Initialize a histogram evaluator with 2 axes defined by tuples
 
@@ -1313,12 +1225,25 @@ class EvalJointHist(Evaluator):
             data, a function must be used to reduce the inputs to the coarser
             resolution. Current choices include "min", "mean", and "max"
         """
-        self._ax1_args_unevaluated = ax1_args
-        self._ax2_args_unevaluated = ax2_args
+        self._ax1 = ax1
+        self._ax2 = ax2
+        self._cov = cov
+        self._ds_feats = dataset_feats
+        self._derived = derived_feats
+
+        ## if the feat is stored, get its index. Set to None if derived
+        self._ax1_isfunc,self._ax1_ix,self._ax1_args,self._ax1_func = \
+                EvalJointHist._validate_axis_args(self._ax1)
+        self._ax2_isfunc,self._ax2_ix,self._ax2_args,self._ax2_func = \
+                EvalJointHist._validate_axis_args(self._ax2)
+        if not self._cov is None:
+            self._cov_isfunc,self._cov_ix,self._cov_args,self._cov_func = \
+                    EvalJointHist._validate_axis_args(self._rov)
+        else:
+            self._cov_is_func = None
+            self._cov_ix = None
+
         ## Validate axis arguments and evaluate any string lambda functions
-        self._ax1_args,self._ax1_is_func = self._validate_axis_args(ax1_args)
-        self._ax2_args,self._ax2_is_func = self._validate_axis_args(ax2_args)
-        self._cov_feat = covariate_feature
         self.ignore_nan = ignore_nan
         self.absolute_error = use_absolute_error
         self._attrs = attrs
@@ -1342,19 +1267,16 @@ class EvalJointHist(Evaluator):
     def _validate_axis_args(axis_args):
         """
         """
-        if axis_args is None:
-            return (None, None)
-        if len(axis_args) == 2:
-            is_func = False
-        elif len(axis_args) == 3:
-            is_func = True
-            if type(axis_args[1]) == str:
-                axis_args = (axis_args[0], eval(axis_args[1]), axis_args[2])
-            else:
-                assert isinstance(axis_args[1], Callable)
+        is_func = axis_args[0]=="derived"
+        if is_func:
+            axis_ix = None
+            axis_args = self._derived[axis_args[1]][0]
+            axis_func = eval(self._derived[axis_args[1]][1])
         else:
-            raise ValueError(f"Invalid {axis_args =}")
-        return axis_args,is_func
+            axis_ix = self._ds_feats[axis_args[0]].index(axis_args[1])
+            axis_args = None
+            axis_func = None
+        return is_func,axis_ix,axis_args,axis_func
 
     def add_batch(self, inputs, true_state, predicted_residual, indeces=None):
         """ Update the partial evaluation data with a new batch of samples """
@@ -1517,194 +1439,6 @@ class EvalJointHist(Evaluator):
     def from_pkl(self, pkl_path:Path):
         """ """
         return self.from_dict(pkl.load(pkl_path.open("rb")))
-
-    def plot(self, show_ticks=True, plot_covariate=False,
-            separate_covariate_axes=False, plot_diagonal=False,
-            normalize_counts=False, fig_path=None, nan_to_value=np.nan,
-            cov_contour_levels=None, show=False, use_imshow=False,
-            plot_spec={}):
-        """ """
-        # Merge provided plot_spec with un-provided default values
-        old_ps = {
-                "cmap":"nipy_spectral", "cb_size":1, "cb_orient":"vertical",
-                "norm":"linear", "cov_levels":8, "cov_colors":None,
-                "cov_linewidth":2, "cov_linestyles":"solid",
-                "cov_cmap":"plasma", "cov_negative_linestyles":None,
-                "xscale":"linear", "yscale":"linear",
-                "contour_fontsize":"medium", **self.attrs.get("plot_spec", {})
-                }
-        old_ps.update(plot_spec)
-        plot_spec = old_ps
-
-        if plot_spec.get("text_size"):
-            plt.rcParams.update({"font.size":plot_spec["text_size"]})
-
-        if self._cov_sum is None or not separate_covariate_axes:
-            fig, ax = plt.subplots()
-            cov_ax = None
-        else:
-            fig, (ax,cov_ax) = plt.subplots(1,2)
-
-        if normalize_counts:
-            heatmap = self._counts / np.sum(self._counts)
-        else:
-            heatmap = self._counts.astype(np.float64)
-
-        if not self._cov_sum is None:
-            cov = self._cov_sum / self._counts
-            cov[np.logical_not(np.isfinite(cov))] = nan_to_value
-
-        heatmap[np.logical_not(np.isfinite(heatmap))] = nan_to_value
-
-        if plot_diagonal:
-            ax.plot((0,heatmap.shape[1]-1), (0,heatmap.shape[0]-1),
-                    linewidth=plot_spec.get("line_width"))
-        y,x = np.meshgrid(
-                np.linspace(*self._ax1_args[-1]),
-                np.linspace(*self._ax2_args[-1])
-                )
-        cov_plot = None
-        if use_imshow:
-            extent = (*self._ax2_args[-1][:2], *self._ax1_args[-1][:2])
-            im = ax.imshow(
-                    heatmap,
-                    cmap=plot_spec.get("cmap"),
-                    vmax=plot_spec.get("vmax"),
-                    extent=extent,
-                    norm=plot_spec.get("norm"),
-                    origin="lower",
-                    aspect=plot_spec.get("aspect")
-                    )
-            if plot_covariate \
-                    and not self._cov_sum is None \
-                    and separate_covariate_axes:
-                cov_plot = ax.imshow(
-                        cov,
-                        cmap=plot_spec.get("cov_cmap"),
-                        extent=extent,
-                        origin="lower",
-                        norm=plot_spec.get("cov_norm", "linear"),
-                        aspect=plot_spec.get("aspect"),
-                        vmax=plot_spec.get("cov_vmax"),
-                        vmin=plot_spec.get("cov_vmin"),
-                        )
-                cov_cbar = fig.colorbar(
-                        cov_plot,
-                        orientation=plot_spec.get("cb_orient"),
-                        label=plot_spec.get("cov_cb_label", ""),
-                        shrink=plot_spec.get("cb_size", None),
-                        )
-        else:
-            im = ax.pcolormesh(
-                    x, y, heatmap.T,
-                    cmap=plot_spec.get("cmap"),
-                    vmax=plot_spec.get("vmax"),
-                    norm=plot_spec.get("norm"),
-                    )
-            if plot_covariate \
-                    and not self._cov_sum is None \
-                    and separate_covariate_axes:
-                cov_plot = cov_ax.pcolormesh(
-                        x, y, cov.T,
-                        cmap=plot_spec.get("cov_cmap"),
-                        norm=plot_spec.get("cov_norm", "linear"),
-                        ## dumb shit ik but can't default to None
-                        #**{k:plot_spec[v] for k,v in \
-                        #        [("vmin","cov_vmin"),("vmax","cov_vmax")]
-                        #        if v in plot_spec.keys()
-                        #        }
-                        vmin=plot_spec.get("cov_vmin"),
-                        vmax=plot_spec.get("cov_vmax"),
-                        )
-                cov_cbar = fig.colorbar(
-                        cov_plot,
-                        orientation=plot_spec.get("cb_orient"),
-                        label=plot_spec.get("cov_cb_label", ""),
-                        shrink=plot_spec.get("cb_size", None),
-                        pad=plot_spec.get("cb_pad", .02),
-                        )
-        cbar = fig.colorbar(
-                im, orientation=plot_spec.get("cb_orient"),
-                label=plot_spec.get("cb_label"),
-                shrink=plot_spec.get("cb_size")
-                )
-        if plot_covariate \
-                and not self._cov_sum is None \
-                and not separate_covariate_axes:
-            cov_plot = ax.contour(
-                    x, y, cov.T,
-                    levels=plot_spec.get("cov_levels"),
-                    colors=plot_spec.get("cov_colors"),
-                    cmap=plot_spec.get("cov_cmap"),
-                    linewidths=plot_spec.get("cov_linewidth"),
-                    negative_linestyles=plot_spec.get(
-                        "cov_negative_linestyles"),
-                    )
-            ax.clabel(cov_plot, fontsize=plot_spec.get("contour_fontsize"))
-        if not show_ticks:
-            plt.tick_params(axis="x", which="both", bottom=False,
-                            top=False, labelbottom=False)
-            plt.tick_params(axis="y", which="both", bottom=False,
-                            top=False, labelbottom=False)
-
-        if plot_spec.get("xlim"):
-            ax.set_xlim(*plot_spec.get("xlim"))
-            if cov_ax:
-                cov_ax.set_xlim(*plot_spec.get("xlim"))
-        else:
-            ax.set_xlim(*self._ax2_args[-1][:2])
-            if cov_ax:
-                cov_ax.set_xlim(*self._ax2_args[-1][:2])
-        if plot_spec.get("ylim"):
-            ax.set_ylim(plot_spec.get("ylim"))
-            if cov_ax:
-                cov_ax.set_ylim(plot_spec.get("ylim"))
-        else:
-            ax.set_ylim(*self._ax1_args[-1][:2])
-            if cov_ax:
-                cov_ax.set_ylim(*self._ax1_args[-1][:2])
-
-        if not cov_plot is None:
-            cov_ax.set_xlabel(plot_spec.get("xlabel", ""))
-            cov_ax.set_ylabel(plot_spec.get("ylabel", ""))
-
-        #fig.suptitle(plot_spec.get("title"))
-        fig.suptitle(plot_spec.get("title"))
-        ax.set_title(plot_spec.get("hist_title"))
-        if cov_ax:
-            cov_ax.set_title(plot_spec.get("cov_title"))
-        ax.set_xlabel(plot_spec.get("xlabel"))
-        ax.set_ylabel(plot_spec.get("ylabel"))
-        ax.set_yscale(plot_spec.get("yscale"))
-        ax.set_xscale(plot_spec.get("xscale"))
-        if plot_spec.get("aspect"):
-            ax.set_box_aspect(plot_spec["aspect"])
-        if plot_covariate \
-                and not self._cov_sum is None \
-                and separate_covariate_axes:
-            #cov_ax.set_title(plot_spec.get("cov_title", ""))
-            cov_ax.set_xlabel(plot_spec.get("cov_xlabel", ""))
-            cov_ax.set_ylabel(plot_spec.get("cov_ylabel", ""))
-            if plot_spec.get("aspect"):
-                cov_ax.set_box_aspect(plot_spec["aspect"])
-
-        if not plot_spec.get("x_ticks") is None:
-            ax.set_xticks(plot_spec.get("x_ticks"))
-        if not plot_spec.get("y_ticks") is None:
-            ax.set_yticks(plot_spec.get("y_ticks"))
-        if show:
-            plt.show()
-        if not fig_path is None:
-            if plot_spec.get("fig_size"):
-                fig.set_size_inches(plot_spec["fig_size"])
-            fig.savefig(
-                    fig_path.as_posix(),
-                    dpi=plot_spec.get("dpi", 200),
-                    bbox_inches=plot_spec.get("bbox_inches")
-                    )
-            print(f"Generated {fig_path.as_posix()}")
-        plt.close()
-        return fig,ax
 
 if __name__=="__main__":
     pass

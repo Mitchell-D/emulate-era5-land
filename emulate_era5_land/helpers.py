@@ -1,6 +1,25 @@
 import numpy as np
 from pathlib import Path
 
+from collections.abc import Mapping, Sequence
+
+def np_collate_fn(batch):
+    """
+    Pytorch collate_fn implementation that can handle nested dicts
+    and tuples, but returns numpy arrays instead of pytorch Tensors
+    """
+    elem = batch[0]
+    if isinstance(elem, np.ndarray):
+        return np.stack(batch, axis=0)
+    elif isinstance(elem, Mapping):
+        return {k:np_collate_fn([d[k] for d in batch]) for k in elem}
+    elif isinstance(elem, tuple):
+        return tuple(np_collate_fn(s) for s in zip(*batch))
+    elif isinstance(elem, Sequence) and not isinstance(elem, str):
+        return [np_collate_fn(samples) for samples in zip(*batch)]
+    else:
+        return np.array(batch)
+
 def _parse_feat_idxs(out_feats, src_feats, static_feats, derived_feats,
         alt_feats:list=[]):
     """

@@ -13,25 +13,37 @@ class PredictionDataset(torch.utils.data.IterableDataset):
     runs the model, and yields the inference results alongside the inputs.
     """
     def __init__(self, model_path:Path, use_dataset:str=None,
-            config_override:dict=None, device=None):
+            normalized_outputs=None, config_override:dict=None, device=None,
+            output_device=None):
         """
         :@param model_path: Path to the model weights, which is assumed to be
             inside the 'model dir' containing the configuration json
         :@param use_dataset: String key of one of the datasets configured under
             'data' indicating which of the datasets in the config to base the
             configuration after
+        :@param normalized_outputs: If True, outputs remain normalized as they
+            were during training. Otherwise, they are rescaled to normal data
+            coordinates before being returned.
         :@param config_override: dict containing a tree of substitutions to
             the original configuration. Only substitutions to the 'feats',
             'data', and 'seed' fields are supported; it doesn't make sense to
             modify any of the others after training. Use the feats to add
             auxiliary features or change the window/horizon size, and use the
             data field to configure an evaluation generator.
+        :@param device: Device on which to compute the model results
+        :@param output_device: If defined, tensors are sent to this device
+            before being returned. If None, the device is used
         """
         if device is None:
             self._device = torch.device(
                     "cuda:0" if torch.cuda.is_available() else "cpu")
         else:
             self._device = device
+        if output_device is None:
+            self._out_device = device
+        else:
+            self._out_device = output_device
+        self._norm_out = normalized_outputs
         self._model_dir = model_path.parent
         self._model_path = model_path
         og_config_path = self._model_dir.joinpath(
@@ -55,7 +67,14 @@ class PredictionDataset(torch.utils.data.IterableDataset):
                     },
                 },
             "metrics":self._og_config.get("metrics"),
-            "model":self._og_config.get("model"),
+            "model":{
+                "type":self._og_config["model"]["type"],
+                "args":{
+                    **self._og_config["model"]["args"],
+                    **({"normalized_outputs":self._norm_out}
+                       if not self._norm_out is None else {})
+                    },
+                },
             "setup":self._og_config.get("setup"),
             "seed":co.get("seed", self._og_config.get("seed")),
             "name":self._og_config.get("name"),
@@ -81,13 +100,49 @@ class PredictionDataset(torch.utils.data.IterableDataset):
                 ))
         self._cur_ix = None
 
+        pf_args = {
+                "w":self._w_feats,
+                "h":self._h_feats,
+                "y":self._y_feats,
+                "yinit":[fl.split(" ")[-1] for fl in self._y_feats]
+                }
+        self._norms = {
+                k:torch.Tensor([
+                    self._og_config["feats"]["norm_coeffs"].get(fl,(0,1))
+                    for fl in v], device=self._out_device).T
+                for k,v in pf_args.items()
+                }
+        self._norms["s"] = torch.Tensor([
+            self._coeffs.get(fl,(0,1)) for fl in self._s_feats
+            ], device=self._out_device).T
+
     def _replenish_batch(self):
         """ """
-        x,y,aux = next(self._dl)
-        w,h,s,si,init = x
+        inputs,(y,),aux = next(self._dl)
+        w,h,s,si,init = inputs
         p = self._model(w, h, s, si, device=self._device)
         self._cur_ix = 0
-        self._cur_sample = ((w, h, s, si, init), y, aux, (p,))
+
+        ## send all datasets to the output device
+        od = self._out_device
+        w = w.to(od)
+        h = h.to(od)
+        s = s.to(od)
+        si = tuple([x.to(od) for x in si])
+        init = init.to(od)
+        y = y.to(od)
+        aux = tuple([x.to(od) for x in aux])
+        p = p.to(od)
+
+        if self._norm_out:
+            w = w * self._norms["w"][1] + self._norms["w"][0]
+            h = h * self._norms["h"][1] + self._norms["h"][0]
+            s = s * self._norms["s"][1] + self._norms["s"][0]
+            init = init * self._norms["yinit"][1] + self._norms["yinit"][0]
+            y = y * self._norms["y"][1] + self._norms["y"][0]
+            p = p * self._norms["y"][1] + self._norms["y"][0]
+
+        self._cur_sample = ((w,h,s,si,init), (y,), aux, (p,))
         self._cur_bs = w.shape[0]
 
     def __next__(self):

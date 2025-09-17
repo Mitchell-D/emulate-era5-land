@@ -102,3 +102,12 @@ ignore\_nan, pred\_coarseness)
    with the required arguments and assemble full `__init__` function
    kwarg dict in order to dynamically create a list of evaluators
    and corresponding unique pkl file paths.
+
+ - break EvalJointHist axis args into ax1\_dataset, ax2\_dataset, ax1\_feat,
+   ax2\_feat, ax1\_hbounds, ax2\_hbounds, ax1\_hres, ax2\_hres so that the
+   default and required arguments make more sense.
+    - for derived values like infiltration ratio, later define a dataset called
+      "derived" and enable separate derived feat recipes to be specified in a
+      dict as a default argument.
+
+ -
