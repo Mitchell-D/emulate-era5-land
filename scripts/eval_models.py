@@ -8,17 +8,24 @@ from emulate_era5_land.generators import PredictionDataset
 import emulate_era5_land.evaluators
 from emulate_era5_land.helpers import np_collate_fn
 
+## configuration system for evaluator objects
 eval_options = {
+        "temporal":{
+            "eval_type":evaluators.EvalTemporal,
+            "default_args":["attrs", "time_feat", "time_axis", "time_slice"],
+            "required_args":evaluators.EvalTemporal.required,
+            "defaults":{
+                "time_feat":("time", "epoch"), "time_axis":1,
+                "time_slice":"horizon",
+                },
+            },
+        }
+
+'''
         "horizon":{
             "eval_type":evaluators.EvalHorizon,
             "default_args":["pred_coarseness", "attrs"],
             "required_args":[],
-            "defaults":{},
-            },
-        "temporal":{
-            "eval_type":evaluators.EvalTemporal,
-            "default_args":["attrs"],
-            "required_args":["use_absolute_error"],
             "defaults":{},
             },
         "static-combos":{
@@ -80,21 +87,51 @@ eval_options = {
                 "ignore_nan":True,
                 },
             },
-        }
+'''
 
 def get_eval_from_config(model_config, dataset_feats, eval_tuple):
+    """
+    Given a model configuration dict, a dict enumerating the features in each
+    category, and a single tuple providing a evaluator instance type and
+    non-default arguments for initializing it, return an instantiated subclass
+    of the Evaluator which is prepared to recieve batch data.
+
+    This method wraps some stinky code that handles Evaluator parameters which
+    are dependent on model configuration parameters in order to keep the
+    Evaluator subclasses and instance configuration data and model agnostic.
+    """
     eval_category,*eval_positionals = eval_tuple
     eval_cfg = eval_options[eval_category]
-    eval_args = {}
-    defaults = {
+
+    ## Go ahead and build a dict of defaults that are commonly used so they
+    candidate_defaults = {
             "pred_coarseness":model_config["feats"].get("pred_coarseness", 1),
             "attrs":{"model_config":model_config},
             **eval_cfg["defaults"]
             }
-    for a in default_args:
+
+    ## iterate through the default args
+    eval_args = {}
+    '''
+    for a in eval_cfg["default_args"]:
+        ## if a default argument is provided,
         if a in defaults.keys():
             eval_args[a] = defaults[a]
-        elif a=="ax1_"
+        elif a in ("ax1_dataset", "ax2_dataset"):
+    '''
+    for a in eval_cfg["required_args"]:
+        if a in eval_cfg["default_args"].keys():
+            ## perform substitutions for shorthand arguments that depend on
+            ## the particular model configuration
+            if a=="time_slice":
+                if eval_cfg["default_args"][a] == "horizon":
+                    eval_cfg["default_args"][a] = (
+                            model_config["feats"]["window_size"], None)
+                elif eval_cfg["default_args"][a] == "window":
+                    eval_cfg["default_args"][a] = (
+                            0, model_config["feats"]["window_size"])
+                elif eval_cfg["default_args"][a] == "full":
+                    eval_cfg["default_args"][a] = (0, None)
 
 if __name__=="__main__":
     proj_root = Path("/rhome/mdodson/emulate-era5-land")
@@ -163,7 +200,7 @@ if __name__=="__main__":
             )
 
     ## get feat indeces of differentiated feats, which must be discretely
-    ## integrated and concateanted with the other data
+    ## integrated and concatented with the other data.
     diff_fixs = []
     integ_feats = []
     for ix,f in enumerate(model_config["feats"]["target_feats"]):
@@ -179,12 +216,14 @@ if __name__=="__main__":
             "error":model_config["feats"]["target_feats"]+integ_feats,
             "aux_dynamic":model_config["feats"]["aux_dynamic_feats"],
             "aux_static":model_config["feats"]["aux_static_feats"],
+            "time":["epoch"],
             }
     for i in range(32):
         x,(y,),a,(p,) = next(pdl)
         w,h,s,si,init = x
         a_d,a_s,t = a
 
+        ## concatenate integrated versions of only the differentiated features.
         y = np.concatenate([
             y, init[...,diff_fixs]+np.cumsum(y[...,diff_fixs], axis=1)
             ], axis=-1)
@@ -194,5 +233,7 @@ if __name__=="__main__":
         e = y-p
 
         bdict = {"window":w, "horizon":h, "static":s, "static_int":si,
-                 "aux_dynamic":a_d, "aux_static":a_s, "time":t, "error":e}
+                 "aux_dynamic":a_d, "aux_static":a_s, "time":t, "error":e,
+                 "target":y, "pred":p, "error":e,
+                 }
         print(p[0].shape)
