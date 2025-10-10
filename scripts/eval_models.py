@@ -16,7 +16,7 @@ eval_options = {
             "required_args":evaluators.EvalTemporal.required,
             "defaults":{
                 "time_feat":("time", "epoch"), "time_axis":1,
-                "time_slice":"horizon",
+                "time_slice":"horizon", "batch_axis":0, "reduce_func":None,
                 },
             },
         }
@@ -211,12 +211,15 @@ if __name__=="__main__":
     dataset_feats = {
             "window":model_config["feats"]["window_feats"],
             "horizon":model_config["feats"]["horizon_feats"],
+            "static":model_config["feats"]["static"],
+            "static-int":model_config["feats"]["static_int"],
+            "aux-dynamic":model_config["feats"]["aux_dynamic_feats"],
+            "aux-static":model_config["feats"]["aux_static_feats"],
+            "time":["epoch"],
             "target":model_config["feats"]["target_feats"]+integ_feats,
             "pred":model_config["feats"]["target_feats"]+integ_feats,
-            "error":model_config["feats"]["target_feats"]+integ_feats,
-            "aux_dynamic":model_config["feats"]["aux_dynamic_feats"],
-            "aux_static":model_config["feats"]["aux_static_feats"],
-            "time":["epoch"],
+            "err-bias":model_config["feats"]["target_feats"]+integ_feats,
+            "err-abs":model_config["feats"]["target_feats"]+integ_feats,
             }
     for i in range(32):
         x,(y,),a,(p,) = next(pdl)
@@ -232,8 +235,8 @@ if __name__=="__main__":
             ], axis=-1)
         e = y-p
 
-        bdict = {"window":w, "horizon":h, "static":s, "static_int":si,
-                 "aux_dynamic":a_d, "aux_static":a_s, "time":t, "error":e,
-                 "target":y, "pred":p, "error":e,
+        bdict = {"window":w, "horizon":h, "static":s, "static-int":si,
+                 "aux-dynamic":a_d, "aux-static":a_s, "time":t, "target":y,
+                 "pred":p, "err-bias":e, "err-abs":np.abs(e),
                  }
         print(p[0].shape)

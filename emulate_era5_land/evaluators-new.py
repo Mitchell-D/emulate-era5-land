@@ -2,7 +2,7 @@ from abc import ABC,abstractmethod
 from copy import deepcopy
 import numpy as np
 import pickle as pkl
-from datetime import datetime
+from datetime import datetime,timezone
 from typing import Callable
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -15,6 +15,21 @@ EVALUATORS = {
         "EvalJointHist":EvalJointHist,
         "EvalGridAxes":EvalGridAxes,
         }
+REDUCE_FUNCS = {"min":np.amin, "mean":np.average, "max":np.amax, "sum":np.sum}
+
+def _epoch_to_tod_doy_index(epoch_time):
+    """
+    Convert an epoch time to an index for the time of day and day of year
+    """
+    t = datetime.fromtimestamp(int(epoch_time), tz=timezone.utc)
+    t = t.timetuple()
+    ## round hour up if > 50 minutes
+    tmp_tod = t.tm_hour + t.tm_min // 50
+    ## cycle day if hour rounds up
+    ix_tod = tmp_tod % 24
+    ## convert day to index and increment if rounded to next day.
+    ix_doy = (t.tm_yday - 1 + int(tmp_tod == 24)) % 366
+    return np.array([ix_doy, ix_tod])
 
 
 class Evaluator(ABC):
@@ -47,6 +62,24 @@ class Evaluator(ABC):
     def __init__(self, subtype:str, params:dict, feats:dict,
             results:dict=None):
         """
+        Generalized initializer for Evaluator instances, which should handle
+        pretty much all the functionality needed for initializing subclass
+        instances. Defines the parameter, feature, and result dicts, and
+        validates the parameters according to the subclass' required
+        implementation of _validate_params.
+
+        :@param subtype: String name of the subclass of Evaluator being
+            initialized. This is needed in order to generally store and
+            re-load serialized subclass instances.
+        :@param params: Dict of parameters needed to define the behavior of
+            an Evaluator subclass instance. Each of the keys contained in this
+            dict should be provided in a 'required' property of subclasses.
+        :@param feats: Dict mapping dataset strings to a list of the string
+            labels naming features in the dataset array (or list of arrays).
+        :@param results: Dict where result states accumulated per batch are
+            stored. If this is a newly-initialized Evaluator, it's expected
+            that results is None, but re-loaded Evaluators may have a populated
+            results dict.
         """
         self._p = params ## parameter dict
         self._f = feats ## feature dict
@@ -103,14 +136,45 @@ class EvalTemporal(Evaluator):
     """
     Store the average and standard deviation with respect to time of
     day and day of year using Welford's online algorithm.
+
+    Required parameters in `params` dict:
+
+    :@param data_feats: list of 2-tuples of strings (dataset, feat) indicating
+        the data features for which to collect statistics. All of the arrays
+        MUST have simultaneous time axes, and the time axis must be along the
+        same dimension for all of them.
+    :@param batch_axis: integer axis indicating which dimension of the arrays
+        specified by data_feats represents the batches. It must be the same
+        for all provided data_feats.
+    :@param reduce_func: String indicating which function to use for reducing
+        axes other than the batch, time, and feature axes to a scalar for
+        timestep-wise calculations. Naturally, this parameter can be left as
+        None if the data won't have any other dimensions. Otherwise it must
+        be a string key of REDUCE_FUNCS, ie "mean", "min", "max".
+    :@param time_feat: 2-tuple of strings (dataset, feat) indicating where a
+        2d array (batch, timesteps) of epoch times is provided, which are
+        needed for indexing the stored statistics.
+    :@param time_axis: integer axis indicating which dimension of the arrays
+        specified by data_feats represents the time axis. It must be the same
+        for all provided data_feats; if a different axis is needed, just
+        declare a separate evaluator for those data features.
+    :@param time_slice: 2-tuple of integer or None indicating the subset of
+        the 1d time array corresponding to the data features' time axis.
     """
-    required = ["use_absolute_error", "data_feats", "time_feat", "time_axis",
-            "time_slice"]
+    required = ["data_feats", "batch_axis", "reduce_func"
+            "time_feat", "time_axis", "time_slice"]
     def __init__(self, params:dict, feats:dict, results:dict=None):
+        """ Declare an EvalTemporal evaluator. See superclass initializer. """
         super(EvalTemporal, self).__init__(
-                "EvalTemporal", params=params, feats=feats, results=results)
+                "EvalTemporal",
+                params=params,
+                feats=feats,
+                results=results
+                )
+        self._ix_vfunc = None
 
     def _validate_params(self):
+        """ """
         assert all(k in self._p.keys() for k in self.required),
             f"All of the following must be provided as params: {self.required}"
         assert isinstance(self._p["use_absolute_error"], bool)
@@ -124,8 +188,61 @@ class EvalTemporal(Evaluator):
             f"time feature {fk} not in dataset {dk} {self._f[dk]}"
 
     def add_batch(self, bdict:dict):
+        """ """
         if self._r is None:
             self._start_results()
+        ## slice for subsetting time array to index data arrays along time axis
+        seq_slice = slice(*self._p["time_slice"])
+        ## extract the feature associated with epoch times. It's assumed that
+        ## after extraction this is a 2d array (batch,times) of epoch times.
+        etimes = self.get_farray(*self._p["time_feat"], bdict)[:,seq_slice]
+        assert etimes.ndim==2, f"{etimes.shape = }"
+
+        ## vectorize the function to get (ToD, DoY) indeces from epoch times
+        if self._ix_vfunc is None:
+            self._ix_vfunc = np.vectorize(
+                    _epoch_to_tod_doy_index, signature="()->(2)")
+
+        ## use the vectorized function to calculate the indeces;
+        ## the result should be a (B,S,2) array
+        ix_doy_tod = self._ix_vfunc(etimes)
+
+        ## Extract the data arrays for which to calculate statistics
+        bdata = []
+        for df in self._p["data_feats"]:
+            ## probably (B,S) shaped when returned, but treat more generally
+            x = self.get_farray(*df, bdict)
+            assert x.shape[self._p["time_axis"]] == (nt := etimes.shape[1]),
+                f"The time axis size for {df} doesn't match the time slice; "
+                f"{x.shape = }, while {etimes.shape = }"
+            assert x.shape[self._p["batch_axis"]] == (nt := etimes.shape[0]),
+                f"The batch axis size for {df} doesn't match the time batch; "
+                f"{x.shape = }, while {etimes.shape = }"
+            extra_axes = tuple(set(range(x.ndim)) - set([
+                self._p["time_axis"], self._p["batch_axis"]]))
+
+            ## reorder the axes so batch and time come first, in that order.
+            ax_order = (self._p["batch_axis"],self._p["time_axis"],*extra_axes)
+            x = x.transpose(ax_order)
+            ## use the specified function to reduce extra axes if they exist
+            if extra_axes:
+                x = REDUCE_FUNC[self._p["reduce_func"]](
+                        x, axis=tuple(range(2,x.ndim)))
+            ## collapse batch and time dimensions together
+            bdata.append(x.ravel())
+
+        ## collapse the batch and time dimensions together for time indeces
+        ix_doy_tod = ix_doy_tod.reshape((-1,2)) ## (T,2) array of indeces
+        bdata = np.stack(bdata, axis=-1) ## (T,F) array of batch data values
+
+        tmpc = np.zeros((366, 24, len(self._p["data_feats"])))
+        tmpm = np.zeros((366, 24, len(self._p["data_feats"])))
+        tmpm2 = np.zeros((366, 24, len(self._p["data_feats"])))
+
+        for i in range(bdata.shape[0]):
+            tmpc[*ix_doy_tod[i]] += 1
+            tmpm[*ix_doy_tod[i]] = bdata[i]
+
 
     def _start_results(self):
         """ Construct the results dict for welford's algorithm """
