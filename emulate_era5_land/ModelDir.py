@@ -109,9 +109,9 @@ class ModelDir:
         prog = json.load(self.path_prog.open("r"))
         return {
                 "train":{k:np.array(prog["train"][k])
-                    for k in prog["train"].keys()}
+                    for k in prog["train"].keys()},
                 "val":{k:np.array(prog["val"][k])
-                    for k in prog["val"].keys()}
+                    for k in prog["val"].keys()},
                 "train_epochs":np.array(prog["train_epochs"]),
                 "val_epochs":np.array(prog["val_epochs"]),
                 "lr":np.array(prog["lr"]),

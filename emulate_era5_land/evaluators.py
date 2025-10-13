@@ -7,15 +7,6 @@ from typing import Callable
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-EVALUATORS = {
-        "EvalHorizon":EvalHorizon,
-        "EvalTemporal":EvalTemporal,
-        "EvalStatic":EvalStatic,
-        "EvalEfficiency":EvalEfficiency,
-        "EvalJointHist":EvalJointHist,
-        "EvalGridAxes":EvalGridAxes,
-        }
-REDUCE_FUNCS = {"min":np.amin, "mean":np.average, "max":np.amax, "sum":np.sum}
 
 def _epoch_to_tod_doy_index(epoch_time):
     """
@@ -73,7 +64,7 @@ class Evaluator(ABC):
             re-load serialized subclass instances.
         :@param params: Dict of parameters needed to define the behavior of
             an Evaluator subclass instance. Each of the keys contained in this
-            dict should be provided in a 'required' property of subclasses.
+            dict should be provided in a 'required' staticmethod of subclasses.
         :@param feats: Dict mapping dataset strings to a list of the string
             labels naming features in the dataset array (or list of arrays).
         :@param results: Dict where result states accumulated per batch are
@@ -90,6 +81,16 @@ class Evaluator(ABC):
         self._t = subtype ## subclass type
         self._validate_params()
         pass
+
+    @classmethod
+    def required(cls):
+        """ List of string labels for required parameter arguments """
+        try:
+            return cls._required
+        except AttributeError as ae:
+            print("_required attribute containing a list of string " \
+                    + f"parameter keys should be defined in {cls}")
+            raise ae
 
     @abstractmethod
     def _validate_params(self):
@@ -145,11 +146,11 @@ class Evaluator(ABC):
         :@param batch_dict: dict mapping dataset names to arrays or lists of
             arrays corresponding to data values for a particular batch.
         """
-        assert dataset in self._f.keys(),
+        assert dataset in self._f.keys(), \
             f"{dataset} not one of {list(self._f.keys())}"
-        assert dataset in batch_dict.keys(),
+        assert dataset in batch_dict.keys(), \
             f"{dataset} not one of {list(batch_dict.keys())}"
-        assert feat in self._f[dataset],
+        assert feat in self._f[dataset], \
             f"{feat} not one of {self._f[dataset]}"
         if isinstance(batch_dict[dataset], (list, tuple)):
             assert len(batch_dict[dataset])==len(self._f[dataset])
@@ -186,8 +187,9 @@ class EvalTemporal(Evaluator):
     :@param time_slice: 2-tuple of integer or None indicating the subset of
         the 1d time array corresponding to the data features' time axis.
     """
-    required = ["eval_feats", "batch_axis", "reduce_func"
-            "time_feat", "time_axis", "time_slice"]
+    _required = ["eval_feats", "batch_axis", "reduce_func"
+                "time_feat", "time_axis", "time_slice"]
+
     def __init__(self, params:dict, feats:dict,
             results:dict=None, meta:dict={}):
         """ Declare an EvalTemporal evaluator. See superclass initializer. """
@@ -202,16 +204,16 @@ class EvalTemporal(Evaluator):
 
     def _validate_params(self):
         """ """
-        assert all(k in self._p.keys() for k in self.required),
+        assert all(k in self._p.keys() for k in self.required), \
             f"All of the following must be provided as params: {self.required}"
         assert isinstance(self._p["use_absolute_error"], bool)
         for dk,fk in self._p["eval_feats"]:
             assert dk in self._f.keys(), f"{dk} not in {list(self._f.keys())}"
             assert fk in self._f[dk], f"{fk} not in dataset {dk} {self._f[dk]}"
         dk,fk = self._p["time_feat"]
-        assert dk in self._f.keys(),
+        assert dk in self._f.keys(), \
             f"time dataset {dk} not in {list(self._f.keys())}"
-        assert fk in self._f[dk],
+        assert fk in self._f[dk], \
             f"time feature {fk} not in dataset {dk} {self._f[dk]}"
 
     def add_batch(self, bdict:dict):
@@ -237,12 +239,12 @@ class EvalTemporal(Evaluator):
         for df in self._p["eval_feats"]:
             ## probably (B,S) shaped when returned, but treat more generally
             x = self.get_farray(*df, bdict)
-            assert x.shape[self._p["time_axis"]] == (nt := etimes.shape[1]),
-                f"The time axis size for {df} doesn't match the time slice; "
-                f"{x.shape = }, while {etimes.shape = }"
-            assert x.shape[self._p["batch_axis"]] == (nt := etimes.shape[0]),
-                f"The batch axis size for {df} doesn't match the time batch; "
-                f"{x.shape = }, while {etimes.shape = }"
+            assert x.shape[self._p["time_axis"]] == (nt := etimes.shape[1]), \
+                f"The time axis size for {df} doesn't match the time slice; " \
+                + f"{x.shape = }, while {etimes.shape = }"
+            assert x.shape[self._p["batch_axis"]] == (nt := etimes.shape[0]), \
+                f"The batch axis size for {df} doesn't match the time batch;" \
+                + f" {x.shape = }, while {etimes.shape = }"
             extra_axes = tuple(set(range(x.ndim)) - set([
                 self._p["time_axis"], self._p["batch_axis"]]))
 
@@ -272,7 +274,7 @@ class EvalTemporal(Evaluator):
             tmpix = ix_doy_tod[i]
             self._r["count"][*tmpix] += 1 ## increment the count
             ## initialize the mean if not already established
-            if self._r["count"][*] == 1:
+            if self._r["count"][*tmpix] == 1:
                 self._r["mean"][*tmpix] = bdata[i]
             d_1 = bdata[i] - self._r["mean"][*tmpix]
             self._r["mean"][*tmpix] += d_1 / self._r["count"][*tmpix]
@@ -1144,6 +1146,7 @@ class EvalHorizon(Evaluator):
         """ """
         return self.from_dict(pkl.load(pkl_path.open("rb")))
 
+'''
 class EvalTemporal(Evaluator):
     def __init__(self, use_absolute_error=False, horizon_limit=None, attrs={}):
         """ """
@@ -1267,6 +1270,7 @@ class EvalTemporal(Evaluator):
     def from_pkl(self, pkl_path:Path):
         """ """
         return self.from_dict(pkl.load(pkl_path.open("rb")))
+'''
 
 class EvalStatic(Evaluator):
     def __init__(self, soil_idxs=None, use_absolute_error=False, attrs={}):
@@ -1663,6 +1667,16 @@ class EvalJointHist(Evaluator):
     def from_pkl(self, pkl_path:Path):
         """ """
         return self.from_dict(pkl.load(pkl_path.open("rb")))
+
+EVALUATORS = {
+        #"EvalHorizon":EvalHorizon,
+        "EvalTemporal":EvalTemporal,
+        #"EvalStatic":EvalStatic,
+        #"EvalEfficiency":EvalEfficiency,
+        #"EvalJointHist":EvalJointHist,
+        #"EvalGridAxes":EvalGridAxes,
+        }
+REDUCE_FUNCS = {"min":np.amin, "mean":np.average, "max":np.amax, "sum":np.sum}
 
 if __name__=="__main__":
     pass

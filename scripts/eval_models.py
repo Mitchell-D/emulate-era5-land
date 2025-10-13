@@ -5,7 +5,8 @@ from pathlib import Path
 from time import perf_counter
 
 from emulate_era5_land.generators import PredictionDataset
-import emulate_era5_land.evaluators
+from emulate_era5_land.ModelDir import ModelDir
+from emulate_era5_land import evaluators
 from emulate_era5_land.helpers import np_collate_fn
 
 ## configuration system for evaluator objects
@@ -112,21 +113,20 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple):
     ## Go ahead and build a dict of defaults that are commonly used so they
     defaults = {
             "pred_coarseness":model_config["feats"].get("pred_coarseness", 1),
-            "attrs":{"model_config":model_config},
             **eval_cfg["defaults"],
             }
 
     ## get the required arguments for this evaluator type
-    required = evaluators.EVALUATORS[eval_category].required
+    required = evaluators.EVALUATORS[eval_cfg["eval_type"]].required()
 
     ## validate configuration structure
-    assert all(k in required for k in eval_cfg["defaults"].keys()),
-        "All configured defaults must correspond to required arguments."
-        f"\nrequired: {required}"
-        f"\nprovided: {eval_cfg['defaults']}"
-    assert len(manual_args) == len(eval_cfg["manual_args"]),
-        "A single positional argument must be provided for each of: "
-        f"{eval_cfg['manual_args']}\nincompatible args: {manual_args}"
+    assert all(k in required for k in eval_cfg["defaults"].keys()), \
+        "All configured defaults must correspond to required arguments." \
+        + f"\nrequired: {required}" \
+        + f"\nprovided: {eval_cfg['defaults']}"
+    assert len(manual_args) == len(eval_cfg["manual_args"]), \
+        "A single positional argument must be provided for each of: " \
+        + f"{eval_cfg['manual_args']}\nincompatible args: {manual_args}"
 
     ## make a dict of the positional manual arguments
     manual_args = dict(zip(eval_cfg["manual_args"], manual_args))
@@ -239,28 +239,28 @@ if __name__=="__main__":
     ## integrated and concatented with the other data.
     diff_fixs = []
     integ_feats = []
-    for ix,f in enumerate(model_config["feats"]["target_feats"]):
+    for ix,f in enumerate(md.config["feats"]["target_feats"]):
         if f.split(" ")[0]=="diff":
             diff_fixs.append(ix)
             integ_feats.append(" ".join(f.split(" ")[1:]))
 
     ## make an updated feature listing included the integrated output values
     dataset_feats = {
-            "window":model_config["feats"]["window_feats"],
-            "horizon":model_config["feats"]["horizon_feats"],
-            "static":model_config["feats"]["static"],
-            "static-int":model_config["feats"]["static_int"],
-            "aux-dynamic":model_config["feats"]["aux_dynamic_feats"],
-            "aux-static":model_config["feats"]["aux_static_feats"],
+            "window":md.config["feats"]["window_feats"],
+            "horizon":md.config["feats"]["horizon_feats"],
+            "static":md.config["feats"]["static_feats"],
+            "static-int":md.config["feats"]["static_int_feats"],
+            "aux-dynamic":md.config["feats"]["aux_dynamic_feats"],
+            "aux-static":md.config["feats"]["aux_static_feats"],
             "time":["epoch"],
-            "target":model_config["feats"]["target_feats"]+integ_feats,
-            "pred":model_config["feats"]["target_feats"]+integ_feats,
-            "err-bias":model_config["feats"]["target_feats"]+integ_feats,
-            "err-abs":model_config["feats"]["target_feats"]+integ_feats,
+            "target":md.config["feats"]["target_feats"]+integ_feats,
+            "pred":md.config["feats"]["target_feats"]+integ_feats,
+            "err-bias":md.config["feats"]["target_feats"]+integ_feats,
+            "err-abs":md.config["feats"]["target_feats"]+integ_feats,
             }
 
     ## declare the Evaluator subclass objects
-    evals = [get_eval_from_config(model_config, dataset_feats, ctup)
+    evals = [get_eval_from_config(md.config, dataset_feats, ctup)
             for ctup in eval_config]
 
     for i in range(num_batches):

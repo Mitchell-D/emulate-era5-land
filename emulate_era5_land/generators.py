@@ -86,7 +86,12 @@ class PredictionDataset(torch.utils.data.IterableDataset):
         self._ds = get_datasets_from_config(self._config)[use_dataset]
         self._model = get_model_from_config(self._config)
         self._model.load_state_dict(
-                torch.load(self._model_path, weights_only=True))
+                torch.load(
+                    self._model_path,
+                    weights_only=True,
+                    map_location=torch.device(self._device),
+                    )
+                )
         self._model = self._model.to(self._device)
         self._model.eval()
 
@@ -101,10 +106,12 @@ class PredictionDataset(torch.utils.data.IterableDataset):
         self._cur_ix = None
 
         pf_args = {
-                "w":self._w_feats,
-                "h":self._h_feats,
-                "y":self._y_feats,
-                "yinit":[fl.split(" ")[-1] for fl in self._y_feats]
+                "w":self._ds.signature["window_feats"],
+                "h":self._ds.signature["horizon_feats"],
+                "y":self._ds.signature["target_feats"],
+                ## ew yea ik
+                "yinit":[fl.split(" ")[-1]
+                    for fl in self._ds.signature["target_feats"]]
                 }
         self._norms = {
                 k:torch.Tensor([
@@ -113,7 +120,8 @@ class PredictionDataset(torch.utils.data.IterableDataset):
                 for k,v in pf_args.items()
                 }
         self._norms["s"] = torch.Tensor([
-            self._coeffs.get(fl,(0,1)) for fl in self._s_feats
+            self._ds.signature["norm_coeffs"].get(fl,(0,1))
+            for fl in self._ds.signature["static_feats"]
             ], device=self._out_device).T
 
     def _replenish_batch(self):
