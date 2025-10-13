@@ -98,6 +98,14 @@ class Evaluator(ABC):
         """ Update the partial evaluation data with a new batch of samples """
         pass
 
+    @abstractmethod
+    def final_results(self):
+        """
+        Formalize the results dict by performing aggregations, normalizing
+        data, etc, producing the most usable form of the Evaluator state.
+        """
+        pass
+
     @staticmethod
     def from_pkl(pkl_path:Path):
         """ Recover attribute dicts of an instance from a pkl """
@@ -189,8 +197,6 @@ class EvalTemporal(Evaluator):
 
     def add_batch(self, bdict:dict):
         """ """
-        if self._r is None:
-            self._start_results()
         ## slice for subsetting time array to index data arrays along time axis
         seq_slice = slice(*self._p["time_slice"])
         ## extract the feature associated with epoch times. It's assumed that
@@ -235,22 +241,37 @@ class EvalTemporal(Evaluator):
         ix_doy_tod = ix_doy_tod.reshape((-1,2)) ## (T,2) array of indeces
         bdata = np.stack(bdata, axis=-1) ## (T,F) array of batch data values
 
-        tmpc = np.zeros((366, 24, len(self._p["data_feats"])))
-        tmpm = np.zeros((366, 24, len(self._p["data_feats"])))
-        tmpm2 = np.zeros((366, 24, len(self._p["data_feats"])))
-
-        for i in range(bdata.shape[0]):
-            tmpc[*ix_doy_tod[i]] += 1
-            tmpm[*ix_doy_tod[i]] = bdata[i]
-
-
-    def _start_results(self):
-        """ Construct the results dict for welford's algorithm """
-        self._r = {
+        if self._r is None:
+            self._r = {
                 "count":np.zeros((366, 24, len(self._p["data_feats"]))),
-                "mean":np.zeros((366, 24, len(self._p["data_feats"]))),
+                "mean":np.full((366, 24, len(self._p["data_feats"])), np.nan),
                 "m2":np.zeros((366, 24, len(self._p["data_feats"]))),
                 }
+
+        ## accumulate using welford's online algorithm
+        for i in range(bdata.shape[0]):
+            self._r["count"][*ix_doy_tod[i]] += 1 ## increment the count
+            ## initialize the mean if not already established
+            if self._r["count"][*ix_doy_tod[i]] == 1:
+                self._r["mean"][*ix_doy_tod[i]] = bdata[i]
+            d_1 = bdata[i] - self._r["mean"][*ix_doy_tod[i]]
+            self._r["mean"][*ix_doy_tod[i]] += \
+                    d_1 / self._r["count"][*ix_doy_tod[i]]
+            d_2 = bdatat[i] - self._r["mean"][*ix_doy_tod[i]]
+            self._r["m2"] += d_1 * d_2 ## accumulate sum of squares of diffs
+
+    def final_results(self):
+        """
+        Return a dict of (DoY, ToD, F) numpy arrays representing the sample
+        count, mean value, variance, and sample variance of accumulated data.
+        """
+        ## can't calculate variance of only one value
+        m_valid = (self._r["count"] >= 2)
+        c = np.where(m_valid, self._r["count"], np.nan)
+        m = np.where(m_valid, self._r["mean"], np.nan)
+        v = np.where(m_valid, self._r["m2"]/self._r["count"], np.nan)
+        s = np.where(m_valid, self._r["m2"]/(self._r["count"]-1), np.nan)
+        return { "count":c, "mean":m, "var":v, "svar":s }
 
 class EvalEfficiency(Evaluator):
     """
