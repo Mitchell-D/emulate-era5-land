@@ -11,12 +11,12 @@ from emulate_era5_land.helpers import np_collate_fn
 ## configuration system for evaluator objects
 eval_options = {
         "temporal":{
-            "eval_type":evaluators.EvalTemporal,
-            "default_args":["attrs", "time_feat", "time_axis", "time_slice"],
-            "required_args":evaluators.EvalTemporal.required,
+            "eval_type":"EvalTemporal",
+            "manual_args":["eval_feats"],
             "defaults":{
-                "time_feat":("time", "epoch"), "time_axis":1,
-                "time_slice":"horizon", "batch_axis":0, "reduce_func":None,
+                 "batch_axis":0, "reduce_func":None,
+                 "time_feat":("time", "epoch"), "time_axis":1,
+                 "time_slice":"horizon",
                 },
             },
         }
@@ -58,9 +58,6 @@ eval_options = {
                 "ax1_dataset":"target", "ax2_dataset":"pred",
                 "use_absolute_error":False, "cov_dataset":"error"},
             },
-        #"hist-infiltration":{
-        #    "eval_type":evaluators.EvalJointHist,
-        #    },
         "hist-state-increment":{
             "eval_type":evaluators.EvalJointHist,
             "default_args":[
@@ -99,39 +96,68 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple):
     This method wraps some stinky code that handles Evaluator parameters which
     are dependent on model configuration parameters in order to keep the
     Evaluator subclasses and instance configuration data and model agnostic.
+
+    :@param model_config: training configuration for the model being evaluated.
+    :@param dataset_feats: Dict mapping dataset names to lists of string
+        feature labels indicating the order of the batch array datasets.
+    :@param eval_tuple: 3-tuple (category, label, args) where category is one
+        of the evaluator type keys from the eval_options configuration, label
+        is a unique string identifier describing this evaluator instance, and
+        args is an iterable of positional values corresponding to the
+        manual_args labels in the configuration.
     """
-    eval_category,*eval_positionals = eval_tuple
+    eval_category,eval_label,manual_args = eval_tuple
     eval_cfg = eval_options[eval_category]
 
     ## Go ahead and build a dict of defaults that are commonly used so they
-    candidate_defaults = {
+    defaults = {
             "pred_coarseness":model_config["feats"].get("pred_coarseness", 1),
             "attrs":{"model_config":model_config},
-            **eval_cfg["defaults"]
+            **eval_cfg["defaults"],
             }
 
-    ## iterate through the default args
-    eval_args = {}
-    '''
-    for a in eval_cfg["default_args"]:
-        ## if a default argument is provided,
+    ## get the required arguments for this evaluator type
+    required = evaluators.EVALUATORS[eval_category].required
+
+    ## validate configuration structure
+    assert all(k in required for k in eval_cfg["defaults"].keys()),
+        "All configured defaults must correspond to required arguments."
+        f"\nrequired: {required}"
+        f"\nprovided: {eval_cfg['defaults']}"
+    assert len(manual_args) == len(eval_cfg["manual_args"]),
+        "A single positional argument must be provided for each of: "
+        f"{eval_cfg['manual_args']}\nincompatible args: {manual_args}"
+
+    ## make a dict of the positional manual arguments
+    manual_args = dict(zip(eval_cfg["manual_args"], manual_args))
+
+    ## iterate through the required args and make substitutions where needed
+    eval_params = {}
+    for a in required:
         if a in defaults.keys():
-            eval_args[a] = defaults[a]
-        elif a in ("ax1_dataset", "ax2_dataset"):
-    '''
-    for a in eval_cfg["required_args"]:
-        if a in eval_cfg["default_args"].keys():
+            assert a not in manual_args.keys(), a
             ## perform substitutions for shorthand arguments that depend on
             ## the particular model configuration
             if a=="time_slice":
-                if eval_cfg["default_args"][a] == "horizon":
-                    eval_cfg["default_args"][a] = (
-                            model_config["feats"]["window_size"], None)
-                elif eval_cfg["default_args"][a] == "window":
-                    eval_cfg["default_args"][a] = (
-                            0, model_config["feats"]["window_size"])
-                elif eval_cfg["default_args"][a] == "full":
-                    eval_cfg["default_args"][a] = (0, None)
+                if defaults[a] == "horizon":
+                    defaults[a] = (model_config["feats"]["window_size"], None)
+                elif defaults[a] == "window":
+                    defaults[a] = (0, model_config["feats"]["window_size"])
+                elif defaults[a] == "full":
+                    defaults[a] = (0, None)
+            eval_params[a] = defaults[a]
+        elif a in manual_args.keys():
+            eval_params[a] = manual_args[a]
+        else:
+            raise ValueError(f"Required argument not provided: {a}")
+
+    name_fields = ("eval", model_config["name"], eval_category, eval_label)
+    ## declare and return the Evaluator based on its configured type.
+    return evaluators.EVALUATORS[eval_cfg["eval_type"]](
+            params=eval_params,
+            feats=dataset_feats,
+            meta={"model_config":model_config, "name":"_".join(name_fields)},
+            )
 
 if __name__=="__main__":
     proj_root = Path("/rhome/mdodson/emulate-era5-land")
@@ -140,6 +166,7 @@ if __name__=="__main__":
     model_name = "acclstm-era5-swm-9_state_0069.pwf"
 
     batch_size = 256
+    num_batches = 16
 
     eval_tgs = [
             proj_root.joinpath(f"data/timegrids/timegrid_era5_{year}.h5")
@@ -147,20 +174,28 @@ if __name__=="__main__":
             ]
     assert all([tg.exists() for tg in eval_tgs])
 
-    base_feats = ["swm-7", "swm-28", "swm-100", "swm-289"]
-    pred_feats = ["diff swm-7", "diff swm-28", "diff swm-100", "diff swm-289"]
+    ## declare shorthand variables for common (dataset, feature) groupings
+    f_intg = [ "swm-7", "swm-28", "swm-100", "swm-289" ]
+    f_diff = [f"diff {k}" for k in f_intg]
+    df_diff_err_bias = [("err-bias",k) for k in f_diff]
+    df_diff_err_abs = [("err-abs",k) for k in f_diff]
+    df_intg_err_bias = [("err-bias",k) for k in f_intg]
+    df_intg_err_abs = [("err-abs",k) for k in f_intg]
+    df_diff_pred = [("pred",k) for k in f_diff]
+    df_intg_pred = [("pred",k) for k in f_intg]
+    df_diff_true = [("target",k) for k in f_diff]
+    df_intg_true = [("target",k) for k in f_intg]
+
+    df_intg_all = df_intg_true+df_intg_pred+df_intg_err_bias+df_intg_err_abs
+    df_diff_all = df_diff_true+df_diff_pred+df_diff_err_bias+df_diff_err_abs
+
+    ## eval_{model}_{eval-type}_{instance-str}.pkl
     eval_config = [
-        ("horizon",),
-        ("temporal", True),
-        ("static-combos", True),
-        ("static-combos", False),
-        *[("efficiency", k) for k in pred_feats]
-        *[("hist-true-pred", ("target", k), ("pred", k)) for k in pred_feats]
-        *[("hist-saturation-error", ("target",bk), ("error",k))
-          for bk,k in zip(base_feats,pred_feats)],
-        ("hist-state-increment", "")
+        ("temporal", "intg-all", [df_intg_all]),
+        ("temporal", "diff-all", [df_diff_all]),
         ]
 
+    ## declare a prediction dataset based on the already-trained model
     md = ModelDir(model_dir)
     pds = PredictionDataset(
             model_path=model_dir.joinpath(model_name),
@@ -193,6 +228,7 @@ if __name__=="__main__":
             output_device="cpu",
             )
 
+    ## declare a data loader for the prediction dataset
     pdl = torch.utils.data.DataLoader(
             dataset=pds,
             batch_size=batch_size,
@@ -207,6 +243,7 @@ if __name__=="__main__":
         if f.split(" ")[0]=="diff":
             diff_fixs.append(ix)
             integ_feats.append(" ".join(f.split(" ")[1:]))
+
     ## make an updated feature listing included the integrated output values
     dataset_feats = {
             "window":model_config["feats"]["window_feats"],
@@ -221,7 +258,13 @@ if __name__=="__main__":
             "err-bias":model_config["feats"]["target_feats"]+integ_feats,
             "err-abs":model_config["feats"]["target_feats"]+integ_feats,
             }
-    for i in range(32):
+
+    ## declare the Evaluator subclass objects
+    evals = [get_eval_from_config(model_config, dataset_feats, ctup)
+            for ctup in eval_config]
+
+    for i in range(num_batches):
+        ## unpack the batch data
         x,(y,),a,(p,) = next(pdl)
         w,h,s,si,init = x
         a_d,a_s,t = a
@@ -235,8 +278,16 @@ if __name__=="__main__":
             ], axis=-1)
         e = y-p
 
+        ## construct a dictionary with all relevant data from this batch
         bdict = {"window":w, "horizon":h, "static":s, "static-int":si,
                  "aux-dynamic":a_d, "aux-static":a_s, "time":t, "target":y,
                  "pred":p, "err-bias":e, "err-abs":np.abs(e),
                  }
-        print(p[0].shape)
+
+        ## update the evaluators
+        for ev in evals:
+            ev.add_batch(bdict)
+
+    ## save the evaluators as pkls
+    for ev in evals:
+        ev.to_pkl(pkl_dir.joinpath(ev.meta["name"]+".pkl"))

@@ -2,71 +2,295 @@ from abc import ABC,abstractmethod
 from copy import deepcopy
 import numpy as np
 import pickle as pkl
-from datetime import datetime
+from datetime import datetime,timezone
 from typing import Callable
 from pathlib import Path
 import matplotlib.pyplot as plt
 
-from testbed.plotting import plot_stats_1d
+EVALUATORS = {
+        "EvalHorizon":EvalHorizon,
+        "EvalTemporal":EvalTemporal,
+        "EvalStatic":EvalStatic,
+        "EvalEfficiency":EvalEfficiency,
+        "EvalJointHist":EvalJointHist,
+        "EvalGridAxes":EvalGridAxes,
+        }
+REDUCE_FUNCS = {"min":np.amin, "mean":np.average, "max":np.amax, "sum":np.sum}
+
+def _epoch_to_tod_doy_index(epoch_time):
+    """
+    Convert an epoch time to an index for the time of day and day of year
+    """
+    t = datetime.fromtimestamp(int(epoch_time), tz=timezone.utc)
+    t = t.timetuple()
+    ## round hour up if > 50 minutes
+    tmp_tod = t.tm_hour + t.tm_min // 50
+    ## cycle day if hour rounds up
+    ix_tod = tmp_tod % 24
+    ## convert day to index and increment if rounded to next day.
+    ix_doy = (t.tm_yday - 1 + int(tmp_tod == 24)) % 366
+    return np.array([ix_doy, ix_tod])
+
 
 class Evaluator(ABC):
-    @abstractmethod
-    def __init__(self):
+    """
+    Base class for Evaluator objects, which must abide the following standards:
+
+    1. All attributes that must persist through serialization are stored in one
+       of the following dictionaries:
+        _p : parameters provided upon initialization that determine the
+             behavior of the evaluator, ie dataset/feature combos to analyze,
+             prediction coarseness, absolute/bias error type, etc.
+        _r : results collected through iteratively adding batches. The
+             particular structure of this dictionary depends on the instance.
+        _f : dict mapping string dataset names to lists of unique string names
+             of the features they contain.
+
+    2. Each batch must be represented as a dict mapping a dataset string name
+       to an array or list of arrays containing the values for that batch's
+       inputs, targets, outputs, auxiliary data values, etc. If an array, the
+       feature axis is assumed to be the last one, which must have the same
+       size as the number of labels in the dataset's corresponding _f list.
+       Similarly, lists are assumed to contain one array for each feature,
+       which may be of non-uniform shapes, as is the case for one-hot encoded
+       static features.
+
+    3. Subclasses must have a static attribute "required" that lists the string
+       keys of parameter items that must be present for a viable Evaluator of
+       that type.
+    """
+    def __init__(self, subtype:str, params:dict, feats:dict,
+            results:dict=None, meta:dict={}):
+        """
+        Generalized initializer for Evaluator instances, which should handle
+        pretty much all the functionality needed for initializing subclass
+        instances. Defines the parameter, feature, and result dicts, and
+        validates the parameters according to the subclass' required
+        implementation of _validate_params.
+
+        :@param subtype: String name of the subclass of Evaluator being
+            initialized. This is needed in order to generally store and
+            re-load serialized subclass instances.
+        :@param params: Dict of parameters needed to define the behavior of
+            an Evaluator subclass instance. Each of the keys contained in this
+            dict should be provided in a 'required' property of subclasses.
+        :@param feats: Dict mapping dataset strings to a list of the string
+            labels naming features in the dataset array (or list of arrays).
+        :@param results: Dict where result states accumulated per batch are
+            stored. If this is a newly-initialized Evaluator, it's expected
+            that results is None, but re-loaded Evaluators may have a populated
+            results dict.
+        :@param meta: Dict of ancillary information like model configurations
+            which is not strictly required for Evaluator functionality
+        """
+        self._p = params ## parameter dict
+        self._f = feats ## feature dict
+        self._r = results ## result dict
+        self._m = meta ## meta-info dict
+        self._t = subtype ## subclass type
+        self._validate_params()
         pass
+
     @abstractmethod
-    def add_batch(self):
+    def _validate_params(self):
+        """ Verify that the required parameters exist for this eval type """
+        pass
+
+    @abstractmethod
+    def add_batch(self, batch_dict:dict):
         """ Update the partial evaluation data with a new batch of samples """
         pass
+
     @abstractmethod
-    def get_results(self):
+    def final_results(self):
         """
-        Collect the partial data from supplied batches into a dict of results
-        formatted as the complete evaluation data this class produces.
+        Formalize the results dict by performing aggregations, normalizing
+        data, etc, producing the most usable form of the Evaluator state.
         """
         pass
-    @abstractmethod
-    def to_pkl(self):
-        pass
-    @abstractmethod
-    def from_pkl():
-        pass
 
-def nash_sutcliffe_efficiency(y, p, axis=1, keepdims=True, epsilon=1e-12):
-    """ """
-    isnumpy = all(type(v) is np.ndarray for v in (y,p))
-    num = tf.math.reduce_sum((y-p)**2)
-    ymean = tf.math.reduce_mean(y, axis=axis, keepdims=keepdims)
-    denom = tf.math.reduce_sum((y-ymean)**2, axis=axis, keepdims=keepdims)
-    return 1 - (num + epsilon)/(denom + epsilon)
+    @staticmethod
+    def from_pkl(pkl_path:Path):
+        """ Recover attribute dicts of an instance from a pkl """
+        t, p, r, f, m = pkl.load(pkl_path.open("rb"))
+        return EVALUATORS[t](params=p, feats=f, results=r, meta=m)
 
-def kling_gupta_efficiency(y, p, axis=1, keepdims=True, epsilon=1e-12):
-    """  """
-    isnumpy = all(type(v) is np.ndarray for v in (y,p))
-    r = pearson_coeff(y, p, axis=axis, keepdims=keepdims, epsilon=epsilon)
-    beta = tf.math.reduce_mean(p, axis=axis, keepdims=keepdims) / \
-            tf.math.reduce_mean(y, axis=axis, keepdims=keepdims)
-    alpha = (tf.math.reduce_std(p, axis=axis, keepdims=keepdims) + epsilon) / \
-            (tf.math.reduce_std(y, axis=axis, keepdims=keepdims) + epsilon)
-    kge = 1 - ((r-1)**2 + (alpha-1)**2 + (beta-1)**2) ** (1/2)
-    if isnumpy:
-        return kge.numpy()
-    return kge
+    @property
+    def params(self):
+        return self._p
+    @property
+    def feats(self):
+        return self._f
+    @property
+    def results(self):
+        return self._r
+    @property
+    def meta(self):
+        return self._m
 
-def pearson_coeff(y, p, axis=1, keepdims=True, epsilon=1e-12):
-    """ Calculate the pearson coefficient of sequences along an axis """
-    isnumpy = all(type(v) is np.ndarray for v in (y,p))
-    ## Difference between the time series and their mean
-    y_mdiff = y - tf.math.reduce_mean(y, axis=axis, keepdims=keepdims)
-    p_mdiff = p - tf.math.reduce_mean(p, axis=axis, keepdims=keepdims)
-    ## Elementwise multiply and sum along series axis for numerator
-    num = tf.math.reduce_sum(y_mdiff*p_mdiff, axis=axis, keepdims=keepdims)
-    ## Root of product of independently-summed squared differences for denom
-    y_denom = tf.math.reduce_sum(y_mdiff**2, axis=axis, keepdims=keepdims)
-    p_denom = tf.math.reduce_sum(p_mdiff**2, axis=axis, keepdims=keepdims)
-    coeff = num / (y_denom * p_denom + epsilon)**(1/2)
-    if isnumpy:
-        return coeff.numpy()
-    return coeff
+    def to_pkl(self, pkl_path:Path):
+        """ Dump the attribute dicts for this instance into a pkl """
+        ptup = (self._t, self._p, self._f, self._r, self._m)
+        pkl.dump(ptup, pkl_path.open("wb"))
+        return pkl_path
+
+    def get_farray(self, dataset:str, feat:str, batch_dict:dict):
+        """
+        Extract a single feature array from a batch dictionary given the
+        array's dataset and feature string keys. Along the way, ensure that
+        datasets have the right number of features.
+
+        :@param dataset: string dataset name of feature to extract.
+        :@param feat: string feat name of array within the dataset to return.
+        :@param batch_dict: dict mapping dataset names to arrays or lists of
+            arrays corresponding to data values for a particular batch.
+        """
+        assert dataset in self._f.keys(),
+            f"{dataset} not one of {list(self._f.keys())}"
+        assert dataset in batch_dict.keys(),
+            f"{dataset} not one of {list(batch_dict.keys())}"
+        assert feat in self._f[dataset],
+            f"{feat} not one of {self._f[dataset]}"
+        if isinstance(batch_dict[dataset], (list, tuple)):
+            assert len(batch_dict[dataset])==len(self._f[dataset])
+            return batch_dict[dataset][self._f[dataset].index(feat)]
+        assert batch_dict[dataset].shape[-1]==len(self._f[dataset])
+        return batch_dict[dataset][...,self._f[dataset].index(feat)]
+
+class EvalTemporal(Evaluator):
+    """
+    Store the average and standard deviation with respect to time of
+    day and day of year using Welford's online algorithm.
+
+    Required parameters in `params` dict:
+
+    :@param eval_feats: list of 2-tuples of strings (dataset, feat) indicating
+        the data features for which to collect statistics. All of the arrays
+        MUST have simultaneous time axes, and the time axis must be along the
+        same dimension for all of them.
+    :@param batch_axis: integer axis indicating which dimension of the arrays
+        specified by eval_feats represents the batches. It must be the same
+        for all provided eval_feats.
+    :@param reduce_func: String indicating which function to use for reducing
+        axes other than the batch, time, and feature axes to a scalar for
+        timestep-wise calculations. Naturally, this parameter can be left as
+        None if the data won't have any other dimensions. Otherwise it must
+        be a string key of REDUCE_FUNCS, ie "mean", "min", "max".
+    :@param time_feat: 2-tuple of strings (dataset, feat) indicating where a
+        2d array (batch, timesteps) of epoch times is provided, which are
+        needed for indexing the stored statistics.
+    :@param time_axis: integer axis indicating which dimension of the arrays
+        specified by eval_feats represents the time axis. It must be the same
+        for all provided eval_feats; if a different axis is needed, just
+        declare a separate evaluator for those data features.
+    :@param time_slice: 2-tuple of integer or None indicating the subset of
+        the 1d time array corresponding to the data features' time axis.
+    """
+    required = ["eval_feats", "batch_axis", "reduce_func"
+            "time_feat", "time_axis", "time_slice"]
+    def __init__(self, params:dict, feats:dict,
+            results:dict=None, meta:dict={}):
+        """ Declare an EvalTemporal evaluator. See superclass initializer. """
+        super(EvalTemporal, self).__init__(
+                "EvalTemporal",
+                params=params,
+                feats=feats,
+                results=results,
+                meta=meta,
+                )
+        self._ix_vfunc = None
+
+    def _validate_params(self):
+        """ """
+        assert all(k in self._p.keys() for k in self.required),
+            f"All of the following must be provided as params: {self.required}"
+        assert isinstance(self._p["use_absolute_error"], bool)
+        for dk,fk in self._p["eval_feats"]:
+            assert dk in self._f.keys(), f"{dk} not in {list(self._f.keys())}"
+            assert fk in self._f[dk], f"{fk} not in dataset {dk} {self._f[dk]}"
+        dk,fk = self._p["time_feat"]
+        assert dk in self._f.keys(),
+            f"time dataset {dk} not in {list(self._f.keys())}"
+        assert fk in self._f[dk],
+            f"time feature {fk} not in dataset {dk} {self._f[dk]}"
+
+    def add_batch(self, bdict:dict):
+        """ """
+        ## slice for subsetting time array to index data arrays along time axis
+        seq_slice = slice(*self._p["time_slice"])
+        ## extract the feature associated with epoch times. It's assumed that
+        ## after extraction this is a 2d array (batch,times) of epoch times.
+        etimes = self.get_farray(*self._p["time_feat"], bdict)[:,seq_slice]
+        assert etimes.ndim==2, f"{etimes.shape = }"
+
+        ## vectorize the function to get (ToD, DoY) indeces from etimes nice
+        if self._ix_vfunc is None:
+            self._ix_vfunc = np.vectorize(
+                    _epoch_to_tod_doy_index, signature="()->(2)")
+
+        ## use the vectorized function to calculate the indeces;
+        ## the result should be a (B,S,2) array
+        ix_doy_tod = self._ix_vfunc(etimes)
+
+        ## Extract the data arrays for which to calculate statistics
+        bdata = []
+        for df in self._p["eval_feats"]:
+            ## probably (B,S) shaped when returned, but treat more generally
+            x = self.get_farray(*df, bdict)
+            assert x.shape[self._p["time_axis"]] == (nt := etimes.shape[1]),
+                f"The time axis size for {df} doesn't match the time slice; "
+                f"{x.shape = }, while {etimes.shape = }"
+            assert x.shape[self._p["batch_axis"]] == (nt := etimes.shape[0]),
+                f"The batch axis size for {df} doesn't match the time batch; "
+                f"{x.shape = }, while {etimes.shape = }"
+            extra_axes = tuple(set(range(x.ndim)) - set([
+                self._p["time_axis"], self._p["batch_axis"]]))
+
+            ## reorder the axes so batch and time come first, in that order.
+            ax_order = (self._p["batch_axis"],self._p["time_axis"],*extra_axes)
+            x = x.transpose(ax_order)
+            ## use the specified function to reduce extra axes if they exist
+            if extra_axes:
+                x = REDUCE_FUNC[self._p["reduce_func"]](
+                        x, axis=tuple(range(2,x.ndim)))
+            ## collapse batch and time dimensions together
+            bdata.append(x.ravel())
+
+        ## collapse the batch and time dimensions together for time indeces
+        ix_doy_tod = ix_doy_tod.reshape((-1,2)) ## (T,2) array of indeces
+        bdata = np.stack(bdata, axis=-1) ## (T,F) array of batch data values
+
+        if self._r is None:
+            self._r = {
+                "count":np.zeros((366, 24, 1)),
+                "mean":np.full((366, 24, len(self._p["eval_feats"])), np.nan),
+                "m2":np.zeros((366, 24, len(self._p["eval_feats"]))),
+                }
+
+        ## accumulate using welford's online algorithm
+        for i in range(bdata.shape[0]):
+            tmpix = ix_doy_tod[i]
+            self._r["count"][*tmpix] += 1 ## increment the count
+            ## initialize the mean if not already established
+            if self._r["count"][*] == 1:
+                self._r["mean"][*tmpix] = bdata[i]
+            d_1 = bdata[i] - self._r["mean"][*tmpix]
+            self._r["mean"][*tmpix] += d_1 / self._r["count"][*tmpix]
+            d_2 = bdatat[i] - self._r["mean"][*tmpix]
+            self._r["m2"][*tmpix] += d_1 * d_2 ## sum of squares of diffs
+
+    def final_results(self):
+        """
+        Return a dict of (DoY, ToD, F) numpy arrays representing the sample
+        count, mean value, variance, and sample variance of accumulated data.
+        """
+        ## can't calculate variance of only one value
+        m_valid = (self._r["count"] >= 2)
+        c = np.where(m_valid, self._r["count"], np.nan)
+        m = np.where(m_valid, self._r["mean"], np.nan)
+        v = np.where(m_valid, self._r["m2"]/self._r["count"], np.nan)
+        s = np.where(m_valid, self._r["m2"]/(self._r["count"]-1), np.nan)
+        return { "count":c, "mean":m, "var":v, "svar":s }
 
 class EvalEfficiency(Evaluator):
     """
