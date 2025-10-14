@@ -164,8 +164,11 @@ if __name__=="__main__":
     model_parent_dir = proj_root.joinpath("data/models")
     model_dir = model_parent_dir.joinpath("acclstm-era5-swm-9")
     model_name = "acclstm-era5-swm-9_state_0069.pwf"
+    pkl_dir = proj_root.joinpath("data/eval")
+    debug = True
 
     batch_size = 256
+    prefetch_factor = 6
     num_batches = 16
 
     eval_tgs = [
@@ -220,20 +223,23 @@ if __name__=="__main__":
                         "buf_policy":0,
                         "batch_size":batch_size,
                         "num_workers":8,
-                        "prefetch_factor":6,
+                        "prefetch_factor":prefetch_factor,
                         "out_dtype":"f4",
                         },
                     },
                 },
             output_device="cpu",
+            debug=False,
             )
 
     ## declare a data loader for the prediction dataset
-    pdl = torch.utils.data.DataLoader(
+    pdl = iter(torch.utils.data.DataLoader(
             dataset=pds,
             batch_size=batch_size,
             collate_fn=np_collate_fn,
-            )
+            #num_workers=1,
+            #prefetch_factor=1,
+            ))
 
     ## get feat indeces of differentiated feats, which must be discretely
     ## integrated and concatented with the other data.
@@ -265,7 +271,12 @@ if __name__=="__main__":
 
     for i in range(num_batches):
         ## unpack the batch data
+        if debug:
+            _t0 = perf_counter()
         x,(y,),a,(p,) = next(pdl)
+        if debug:
+            _t1 = perf_counter()
+            print(f"B{i+1:03} dataloader total: {_t1-_t0:.3f}")
         w,h,s,si,init = x
         a_d,a_s,t = a
 
@@ -281,12 +292,16 @@ if __name__=="__main__":
         ## construct a dictionary with all relevant data from this batch
         bdict = {"window":w, "horizon":h, "static":s, "static-int":si,
                  "aux-dynamic":a_d, "aux-static":a_s, "time":t, "target":y,
-                 "pred":p, "err-bias":e, "err-abs":np.abs(e),
-                 }
+                 "pred":p, "err-bias":e, "err-abs":np.abs(e), }
 
         ## update the evaluators
+        if debug:
+            _t0 = perf_counter()
         for ev in evals:
             ev.add_batch(bdict)
+        if debug:
+            _t1 = perf_counter()
+            print(f"B{i+1:03} evaluator total: {_t1-_t0:.3f}")
 
     ## save the evaluators as pkls
     for ev in evals:

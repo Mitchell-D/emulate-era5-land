@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 from pathlib import Path
 
@@ -17,8 +18,13 @@ def np_collate_fn(batch):
         return tuple(np_collate_fn(s) for s in zip(*batch))
     elif isinstance(elem, Sequence) and not isinstance(elem, str):
         return [np_collate_fn(samples) for samples in zip(*batch)]
+    elif isinstance(elem, torch.Tensor):
+        batch = torch.stack(batch, axis=0)
+        if elem.requires_grad:
+            batch = batch.detach()
+        return batch.numpy()
     else:
-        return np.array(batch)
+        raise ValueError(f"Make another condition for this: {type(elem)}")
 
 def _parse_feat_idxs(out_feats, src_feats, static_feats, derived_feats,
         alt_feats:list=[]):

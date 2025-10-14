@@ -14,7 +14,7 @@ class PredictionDataset(torch.utils.data.IterableDataset):
     """
     def __init__(self, model_path:Path, use_dataset:str=None,
             normalized_outputs=None, config_override:dict=None, device=None,
-            output_device=None):
+            output_device=None, debug=False):
         """
         :@param model_path: Path to the model weights, which is assumed to be
             inside the 'model dir' containing the configuration json
@@ -124,6 +124,8 @@ class PredictionDataset(torch.utils.data.IterableDataset):
             for fl in self._ds.signature["static_feats"]
             ], device=self._out_device).T
 
+        self._debug = debug
+
     def _replenish_batch(self):
         """ """
         inputs,(y,),aux = next(self._dl)
@@ -156,7 +158,12 @@ class PredictionDataset(torch.utils.data.IterableDataset):
     def __next__(self):
         """ """
         if self._cur_ix is None or self._cur_ix==self._cur_bs-1:
+            if self._debug:
+                _t0 = perf_counter()
             self._replenish_batch()
+            if self._debug:
+                _tf = perf_counter()
+                print(f"Batch replenish: {_tf-_t0}")
         cur = (
                 (
                     self._cur_sample[0][0][self._cur_ix],
@@ -531,7 +538,9 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
         ## also if feats are differentiated calculate the forward-difference.
         dsamples = np.stack(dsamples, axis=0)
         ssamples = np.stack(ssamples, axis=0)
-        tsamples = np.stack(tsamples, axis=0)
+        ## add singleton feat dimension for consistency and remove the initial
+        ## time step that was retained in _smp_size for difference calculations
+        tsamples = np.stack(tsamples, axis=0)[:,1:,None]
 
         tmp_w = _calc_feat_array(
                 src_array=dsamples[:,:self._w_size+1],

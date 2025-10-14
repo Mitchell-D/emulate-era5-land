@@ -113,7 +113,7 @@ class Evaluator(ABC):
     @staticmethod
     def from_pkl(pkl_path:Path):
         """ Recover attribute dicts of an instance from a pkl """
-        t, p, r, f, m = pkl.load(pkl_path.open("rb"))
+        t, p, f, r, m = pkl.load(pkl_path.open("rb"))
         return EVALUATORS[t](params=p, feats=f, results=r, meta=m)
 
     @property
@@ -155,7 +155,8 @@ class Evaluator(ABC):
         if isinstance(batch_dict[dataset], (list, tuple)):
             assert len(batch_dict[dataset])==len(self._f[dataset])
             return batch_dict[dataset][self._f[dataset].index(feat)]
-        assert batch_dict[dataset].shape[-1]==len(self._f[dataset])
+        assert batch_dict[dataset].shape[-1]==len(self._f[dataset]), \
+            f"{batch_dict[dataset].shape = } ; {len(self._f[dataset]) = }"
         return batch_dict[dataset][...,self._f[dataset].index(feat)]
 
 class EvalTemporal(Evaluator):
@@ -187,7 +188,7 @@ class EvalTemporal(Evaluator):
     :@param time_slice: 2-tuple of integer or None indicating the subset of
         the 1d time array corresponding to the data features' time axis.
     """
-    _required = ["eval_feats", "batch_axis", "reduce_func"
+    _required = ["eval_feats", "batch_axis", "reduce_func",
                 "time_feat", "time_axis", "time_slice"]
 
     def __init__(self, params:dict, feats:dict,
@@ -204,9 +205,8 @@ class EvalTemporal(Evaluator):
 
     def _validate_params(self):
         """ """
-        assert all(k in self._p.keys() for k in self.required), \
-            f"All of the following must be provided as params: {self.required}"
-        assert isinstance(self._p["use_absolute_error"], bool)
+        assert all(k in self._p.keys() for k in self._required), \
+            f"All of these must be provided as params: {self._required}"
         for dk,fk in self._p["eval_feats"]:
             assert dk in self._f.keys(), f"{dk} not in {list(self._f.keys())}"
             assert fk in self._f[dk], f"{fk} not in dataset {dk} {self._f[dk]}"
@@ -215,6 +215,17 @@ class EvalTemporal(Evaluator):
             f"time dataset {dk} not in {list(self._f.keys())}"
         assert fk in self._f[dk], \
             f"time feature {fk} not in dataset {dk} {self._f[dk]}"
+        assert isinstance(self._p["batch_axis"], int)
+        assert isinstance(self._p["time_axis"], int)
+        assert isinstance(self._p["time_slice"], (list, tuple)), \
+            "time_slice parameter must be a 2-tuple of ints or None " + \
+            "representing a [start,stop) index slice along the time axis"
+        assert len(self._p["time_slice"])==2, \
+            "time_slice parameter must be a 2-tuple of ints or None " + \
+            "representing a [start,stop) index slice along the time axis"
+        assert self._p["reduce_func"] in REDUCE_FUNCS.keys() \
+                or self._p["reduce_func"] is None
+
 
     def add_batch(self, bdict:dict):
         """ """
@@ -253,7 +264,7 @@ class EvalTemporal(Evaluator):
             x = x.transpose(ax_order)
             ## use the specified function to reduce extra axes if they exist
             if extra_axes:
-                x = REDUCE_FUNC[self._p["reduce_func"]](
+                x = REDUCE_FUNCS[self._p["reduce_func"]](
                         x, axis=tuple(range(2,x.ndim)))
             ## collapse batch and time dimensions together
             bdata.append(x.ravel())
@@ -278,7 +289,7 @@ class EvalTemporal(Evaluator):
                 self._r["mean"][*tmpix] = bdata[i]
             d_1 = bdata[i] - self._r["mean"][*tmpix]
             self._r["mean"][*tmpix] += d_1 / self._r["count"][*tmpix]
-            d_2 = bdatat[i] - self._r["mean"][*tmpix]
+            d_2 = bdata[i] - self._r["mean"][*tmpix]
             self._r["m2"][*tmpix] += d_1 * d_2 ## sum of squares of diffs
 
     def final_results(self):
