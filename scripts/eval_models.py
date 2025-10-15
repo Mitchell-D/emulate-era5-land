@@ -3,6 +3,7 @@ import json
 import torch
 from pathlib import Path
 from time import perf_counter
+from multiprocessing import Pool
 
 from emulate_era5_land.generators import PredictionDataset
 from emulate_era5_land.ModelDir import ModelDir
@@ -87,6 +88,11 @@ eval_options = {
             },
 '''
 
+def mp_add_batch(args):
+    """  """
+    ev,bd = args
+    return ev.add_batch(bd)
+
 def get_eval_from_config(model_config, dataset_feats, eval_tuple):
     """
     Given a model configuration dict, a dict enumerating the features in each
@@ -169,7 +175,10 @@ if __name__=="__main__":
 
     batch_size = 256
     prefetch_factor = 6
-    num_batches = 16
+    num_batches = 2048
+    save_every_nbatches = 32
+    nworkers_dataset = 12
+    nworkers_eval = 2
 
     eval_tgs = [
             proj_root.joinpath(f"data/timegrids/timegrid_era5_{year}.h5")
@@ -222,7 +231,7 @@ if __name__=="__main__":
                         "buf_slots":48,
                         "buf_policy":0,
                         "batch_size":batch_size,
-                        "num_workers":8,
+                        "num_workers":nworkers_dataset,
                         "prefetch_factor":prefetch_factor,
                         "out_dtype":"f4",
                         },
@@ -287,7 +296,7 @@ if __name__=="__main__":
         p = np.concatenate([
             p, init[...,diff_fixs]+np.cumsum(p[...,diff_fixs], axis=1)
             ], axis=-1)
-        e = y-p
+        e = p-y
 
         ## construct a dictionary with all relevant data from this batch
         bdict = {"window":w, "horizon":h, "static":s, "static-int":si,
@@ -297,12 +306,18 @@ if __name__=="__main__":
         ## update the evaluators
         if debug:
             _t0 = perf_counter()
-        for ev in evals:
-            ev.add_batch(bdict)
+
+        with Pool(nworkers_eval) as pool:
+            evals = pool.map(mp_add_batch, [(ev,bdict) for ev in evals])
         if debug:
             _t1 = perf_counter()
             print(f"B{i+1:03} evaluator total: {_t1-_t0:.3f}")
 
-    ## save the evaluators as pkls
+        ## periodically save the evaluators as pkls
+        if (i+1)%save_every_nbatches == 0:
+            for ev in evals:
+                ev.to_pkl(pkl_dir.joinpath(ev.meta["name"]+".pkl"))
+
+    ## Final evaluator save.
     for ev in evals:
         ev.to_pkl(pkl_dir.joinpath(ev.meta["name"]+".pkl"))

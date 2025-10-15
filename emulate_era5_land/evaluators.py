@@ -291,6 +291,7 @@ class EvalTemporal(Evaluator):
             self._r["mean"][*tmpix] += d_1 / self._r["count"][*tmpix]
             d_2 = bdata[i] - self._r["mean"][*tmpix]
             self._r["m2"][*tmpix] += d_1 * d_2 ## sum of squares of diffs
+        return self
 
     def final_results(self):
         """

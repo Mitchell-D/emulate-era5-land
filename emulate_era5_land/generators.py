@@ -71,6 +71,8 @@ class PredictionDataset(torch.utils.data.IterableDataset):
                 "type":self._og_config["model"]["type"],
                 "args":{
                     **self._og_config["model"]["args"],
+                    ## Determines whether model preds will be normalized
+                    ## inside the model code; doesn't affect other data.
                     **({"normalized_outputs":self._norm_out}
                        if not self._norm_out is None else {})
                     },
@@ -113,12 +115,16 @@ class PredictionDataset(torch.utils.data.IterableDataset):
                 "yinit":[fl.split(" ")[-1]
                     for fl in self._ds.signature["target_feats"]]
                 }
-        self._norms = {
-                k:torch.Tensor([
-                    self._og_config["feats"]["norm_coeffs"].get(fl,(0,1))
-                    for fl in v], device=self._out_device).T
-                for k,v in pf_args.items()
-                }
+
+        self._norms = {}
+        for k,v in pf_args.items():
+            n = []
+            for fl in v:
+                if fl not in self._og_config["feats"]["norm_coeffs"].keys():
+                    print(f"NORM COEFF NOT FOUND FOR {fl}")
+                n.append(self._og_config["feats"]["norm_coeffs"].get(fl,(0,1)))
+            self._norms[k] = torch.Tensor(n, device=self._out_device).T
+
         self._norms["s"] = torch.Tensor([
             self._ds.signature["norm_coeffs"].get(fl,(0,1))
             for fl in self._ds.signature["static_feats"]
@@ -144,13 +150,16 @@ class PredictionDataset(torch.utils.data.IterableDataset):
         aux = tuple([x.to(od) for x in aux])
         p = p.to(od)
 
-        if self._norm_out:
+        ## if the model expects normalized inputs, but de-normalized outputs
+        ## are wanted, rescale the input values after running the model.
+        ## There are other cases here that prob should be handled but nah
+        norm_in = self._og_config["model"]["args"]["normalized_inputs"]
+        if not self._norm_out and norm_in:
             w = w * self._norms["w"][1] + self._norms["w"][0]
             h = h * self._norms["h"][1] + self._norms["h"][0]
             s = s * self._norms["s"][1] + self._norms["s"][0]
             init = init * self._norms["yinit"][1] + self._norms["yinit"][0]
             y = y * self._norms["y"][1] + self._norms["y"][0]
-            p = p * self._norms["y"][1] + self._norms["y"][0]
 
         self._cur_sample = ((w,h,s,si,init), (y,), aux, (p,))
         self._cur_bs = w.shape[0]
