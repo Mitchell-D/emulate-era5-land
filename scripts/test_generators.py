@@ -24,7 +24,7 @@ if __name__=="__main__":
     max_plotted_samples = 12
 
     ## Run the generator and store the time/location of its outputs
-    '''
+    #'''
     calculate_stats = True
     batches_per_stat = 16
     collect_sample_locations = True
@@ -184,7 +184,7 @@ if __name__=="__main__":
     if calculate_stats:
         pkl.dump((ds_train.signature, all_stats),
                 gen_stats_path.open("wb"))
-    '''
+    #'''
 
     ## Print out the stat metrics per feature / data catagory / batch group
     '''

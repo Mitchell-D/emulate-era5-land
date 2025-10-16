@@ -14,30 +14,6 @@ from emulate_era5_land.generators import stsd_worker_init_fn
 from emulate_era5_land.generators import get_datasets_from_config
 from emulate_era5_land.models import AccLSTM,get_model_from_config
 
-metric_options = {
-        "mae":torch.nn.L1Loss,
-        "mse":torch.nn.MSELoss,
-        }
-
-optimizer_options = {
-        "adam":torch.optim.Adam,
-        "adamw":torch.optim.AdamW,
-        "radam":torch.optim.RAdam,
-        "nadam":torch.optim.NAdam,
-        "rmsprop":torch.optim.RMSprop,
-        "sgd":torch.optim.SGD,
-        }
-
-schedule_options = {
-        "constant":torch.optim.lr_scheduler.ConstantLR,
-        "linear":torch.optim.lr_scheduler.LinearLR,
-        "exponential":torch.optim.lr_scheduler.ExponentialLR,
-        "polynomial":torch.optim.lr_scheduler.PolynomialLR,
-        "reduceonplateu":torch.optim.lr_scheduler.ReduceLROnPlateau,
-        "cyclic":torch.optim.lr_scheduler.CyclicLR,
-        "coswarmrestart":torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
-        }
-
 def get_optimizer(optimizer_type:str, optimizer_args:dict={}):
     assert optimizer_type in optimizer_options.keys(),optimizer_options.keys()
     return optimizer_options.get(optimizer_type)(**optimizer_args)
@@ -73,6 +49,43 @@ class EarlyStopper:
             if self.counter >= self.patience:
                 return True
         return False
+
+class FeatureWeightedL1Loss(torch.nn.Module):
+    """
+    Simple class for applying independent coefficient weights to
+    """
+    def __init__(self, feature_weights):
+        super(FeatureWeightedL1Loss, self).__init__()
+        self.register_buffer("w",torch.Tensor(feature_weights))
+
+    def forward(self, prediction, target):
+        return torch.mean(torch.abs(prediction - target) * self.w)
+
+metric_options = {
+        "mae":torch.nn.L1Loss,
+        "mse":torch.nn.MSELoss,
+        "fwmae":FeatureWeightedL1Loss,
+        }
+
+optimizer_options = {
+        "adam":torch.optim.Adam,
+        "adamw":torch.optim.AdamW,
+        "radam":torch.optim.RAdam,
+        "nadam":torch.optim.NAdam,
+        "rmsprop":torch.optim.RMSprop,
+        "sgd":torch.optim.SGD,
+        }
+
+schedule_options = {
+        "constant":torch.optim.lr_scheduler.ConstantLR,
+        "linear":torch.optim.lr_scheduler.LinearLR,
+        "exponential":torch.optim.lr_scheduler.ExponentialLR,
+        "polynomial":torch.optim.lr_scheduler.PolynomialLR,
+        "reduceonplateu":torch.optim.lr_scheduler.ReduceLROnPlateau,
+        "cyclic":torch.optim.lr_scheduler.CyclicLR,
+        "coswarmrestart":torch.optim.lr_scheduler.CosineAnnealingWarmRestarts,
+        }
+
 
 def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
     """

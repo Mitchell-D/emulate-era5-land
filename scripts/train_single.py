@@ -26,17 +26,18 @@ config = {
     "feats":{
         "window_feats":[
             "pres","tmp","dwpt","apcp","alb",
-            "dlwrf","dswrf","wm-snow","windmag",
-            "wm-snow", "lai-low", "lai-high",
+            "dlwrf","dswrf","wm-snow","ugrd","vgrd",
+            "lai-low", "lai-high",
             "swm-7", "swm-28", "swm-100", "swm-289",
             ],
         "horizon_feats":[
             "pres","tmp","dwpt","apcp","alb",
-            "dlwrf","dswrf","wm-snow","windmag",
-            "wm-snow", "lai-low", "lai-high",
+            "dlwrf","dswrf","wm-snow","ugrd","vgrd",
+            "lai-low", "lai-high",
             ],
         "target_feats":[
             "diff swm-7","diff swm-28","diff swm-100","diff swm-289",
+            #"swm-7", "swm-28", "swm-100", "swm-289",
             ],
         "static_feats":["geopot","lakec","vc-high","vc-low",],
         "static_int_feats":["soilt","vt-high","vt-low"],
@@ -66,7 +67,7 @@ config = {
             "buf_slots":48,
             "buf_policy":0,
             "batch_size":32,
-            "num_workers":8,
+            "num_workers":6,
             "prefetch_factor":6,
             "out_dtype":"f4",
             },
@@ -83,7 +84,7 @@ config = {
             "buf_slots":48,
             "buf_policy":0,
             "batch_size":32,
-            "num_workers":8,
+            "num_workers":6,
             "prefetch_factor":6,
             "out_dtype":"f4",
             },
@@ -91,6 +92,7 @@ config = {
     "metrics":{
             "mse":{"reduction":"mean"},
             "mae":{"reduction":"mean"},
+            "fwmae":{"feature_weights":[8,4,2,1]},
             },
     "model":{
         "type":"acclstm",
@@ -102,14 +104,15 @@ config = {
             "normalized_inputs":True,
             "normalized_outputs":True,
             "cycle_targets":[
-                #"diff swm-7","diff swm-28","diff swm-100","diff swm-289",
-                "swm-7","swm-28","swm-100","swm-289",
+                "diff swm-7","diff swm-28","diff swm-100","diff swm-289",
+                #"swm-7","swm-28","swm-100","swm-289",
                 ],
             "teacher_forcing":True,
             },
         },
     "setup":{
-        "loss_metric":"mae",
+        "loss_metric":"fwmae",
+        #"loss_metric":"mae",
         "optimizer_type":"nadam",
         "optimizer_args":{},
         "schedule_type":"cyclic",
@@ -124,13 +127,13 @@ config = {
         "initial_lr":1e-2,
         "early_stop_patience":12.,
         "early_stop_delta":0.,
-        "max_epochs":1024,
-        "batches_per_epoch":128,
-        "val_frequency":2,
+        "max_epochs":2048,
+        "batches_per_epoch":256,
+        "val_frequency":1,
         },
     "seed":200007221750,
-    "name":"acclstm-era5-swm-16",
-    "notes":"same as v9 except directly predicting swm",
+    "name":"acclstm-era5-swm-19",
+    "notes":"same as v18 but using weighted loss function with sfc heavier",
     }
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')

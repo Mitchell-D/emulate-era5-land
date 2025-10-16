@@ -92,6 +92,7 @@ class AccLSTM(tnn.Module):
             ]
         if len(dcf_info) == 0:
             self._diff_cycle_ixs = []
+            self._dcf_norms = None
         else:
             self._diff_cycle_ixs,dnorms,inorms = list(zip(*dcf_info))
             ## use the norm coeffs to calculate the values for linearly
@@ -153,7 +154,7 @@ class AccLSTM(tnn.Module):
         s = torch.cat([static,si_embed], axis=-1)[:,None]
         w = torch.cat([s.expand(-1,window.size(1),-1), window], axis=-1)
 
-        if self._dcf_norms.device != device:
+        if not self._dcf_norms is None and self._dcf_norms.device != device:
             self._dcf_norms = self._dcf_norms.to(device)
 
         if random_init_state:

@@ -5,13 +5,13 @@
 #SBATCH --mail-user=mtd0012@uah.edu
 
 ### TOTAL processors (number of tasks)
-#SBATCH --ntasks 14
+#SBATCH --ntasks 17
 
 ### total run time estimate (D-HH:MM)
 #SBATCH -t 3-00:00
 
 ### memory (MB per CPU)
-#SBATCH --mem-per-cpu=8G
+#SBATCH --mem-per-cpu=6G
 
 ### Mail to user on job done and fail
 #SBATCH --mail-type=END,FAIL
@@ -21,10 +21,10 @@
 #SBATCH -p standard --gres=gpu:1
 ###SBATCH -p shared --gres=gpu:1
 
-#SBATCH -J acclstm-rsm-16_train
+#SBATCH -J acclstm-rsm-19_train
 ###SBATCH --open-mode=append ### Don't overwrite existing files
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-16.out
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-16.err
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-19.out
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-19.err
 
 ##module load cuda/11.8
 module load cuda/12.4

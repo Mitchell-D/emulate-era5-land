@@ -8,19 +8,41 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 
-def _epoch_to_tod_doy_index(epoch_time):
+def get_epoch_to_index_func(include_year=False):
     """
-    Convert an epoch time to an index for the time of day and day of year
+    Get a vectorizable function that converts an epoch time to integer values
+    that can be used as an index, accounting for rounding errors.
+
+    When include_year is False, the function signature is "()->(2)" and the
+    subsequent vector is the [day_of_year, time_of_day] as indeces starting
+    with zero.
+
+    When include_year is True, the function signature is "()->(3)" and the
+    vector is the [year, day_of_year, ]
     """
-    t = datetime.fromtimestamp(int(epoch_time), tz=timezone.utc)
-    t = t.timetuple()
-    ## round hour up if > 50 minutes
-    tmp_tod = t.tm_hour + t.tm_min // 50
-    ## cycle day if hour rounds up
-    ix_tod = tmp_tod % 24
-    ## convert day to index and increment if rounded to next day.
-    ix_doy = (t.tm_yday - 1 + int(tmp_tod == 24)) % 366
-    return np.array([ix_doy, ix_tod])
+    def _epoch_to_tod_doy_index(epoch_time):
+        """
+        Convert an epoch time to an index for the time of day and day of year
+        """
+        t = datetime.fromtimestamp(int(epoch_time), tz=timezone.utc)
+        t = t.timetuple()
+        ## round hour up if > 50 minutes
+        tmp_tod = t.tm_hour + t.tm_min // 50
+        ## cycle day if hour rounds up
+        ix_tod = tmp_tod % 24
+        ## convert day to index and increment if rounded to next day.
+        tmp_doy = t.tm_yday - 1 + int(tmp_tod == 24)
+
+        ## handle years rolling over due issues rounding to the hour
+        tmp_year = t.tm_year
+        ix_doy = tmp_doy % [366,365][bool(tmp_year % 4)]
+        ix_year = tmp_year + int(ix_doy != tmp_doy)
+
+        if include_year:
+            return np.array([ix_year, ix_doy, ix_tod])
+        else:
+            return np.array([ix_doy, ix_tod])
+    return _epoch_to_tod_doy_index
 
 
 class Evaluator(ABC):
@@ -159,6 +181,66 @@ class Evaluator(ABC):
             f"{batch_dict[dataset].shape = } ; {len(self._f[dataset]) = }"
         return batch_dict[dataset][...,self._f[dataset].index(feat)]
 
+class EvalSampleSources(Evaluator):
+    """
+    Keep track of when/where batch samples are drawn from
+    """
+    _required = ["vidx_feat", "hidx_feat", "time_feat", "cov_feats",
+            "cov_reduce_metric"]
+    def __init__(self, params:dict, feats:dict,
+            results:dict=None, meta:dict={}):
+        """ See superclass initializer. """
+        super(EvalSampleSources, self).__init__(
+                "EvalSampleSources",
+                params=params,
+                feats=feats,
+                results=results,
+                meta=meta,
+                )
+
+    @abstractmethod
+    def _validate_params(self):
+        """ Verify that the required parameters exist for this eval type """
+        for fk in _required:
+            assert fk in self._p.keys(), f"Required param: {fk}"
+        for p in ["vidx_feat", "hidx_feat", "time_feat"]:
+            dk,fk = self._p[p]
+            assert dk in self._f.keys(), f"{dk} not in {list(self._f.keys())}"
+            assert fk in self._f[dk], f"{fk} not in dataset {dk} {self._f[dk]}"
+
+    @abstractmethod
+    def add_batch(self, batch_dict:dict):
+        """ Update the partial evaluation data with a new batch of samples """
+        if self._r is None:
+            self._r = {"vidxs":[], "hidxs":[], "etimes":[]}
+        self._r["vidxs"].append(self.get_farray(
+                *self._p["vidx_feat"], bdict).astype(int))
+        self._r["hidxs"].append(self.get_farray(
+                *self._p["hidx_feat"], bdict).astype(int))
+        self._r["etimes"].append(self.get_farray(
+                *self._p["time_feat"], bdict).astype(int))
+
+    @abstractmethod
+    def final_results(self, time_format="epoch"):
+        """
+        Present the batch-wise arrays of indeces
+
+        :@param time_format: "epoch" or "ymdh". Determines how times are
+            represented. "epoch" results in integer epoch seconds, while "ydh"
+            is has a 3-vector of integers (year, doy, hour)
+        """
+        assert time_format in ("epoch", "ydh")
+        if time_format == "ydh":
+            f = get_epoch_to_index_func(include_year=True)
+            ix_vfunc = np.vectorize(f, signature="()->(2)")
+            t = self._ix_vfunc(self._r["etimes"]).astype(np.uint16)
+        else:
+            t = self._r["etimes"]
+        return {"vidxs":self._r["vidxs"],
+                "hidxs":self._r["hidxs"],
+                "times":t}
+
+
 class EvalTemporal(Evaluator):
     """
     Store the average and standard deviation with respect to time of
@@ -238,8 +320,8 @@ class EvalTemporal(Evaluator):
 
         ## vectorize the function to get (ToD, DoY) indeces from etimes nice
         if self._ix_vfunc is None:
-            self._ix_vfunc = np.vectorize(
-                    _epoch_to_tod_doy_index, signature="()->(2)")
+            f = get_epoch_to_index_func(include_year=False)
+            self._ix_vfunc = np.vectorize(f, signature="()->(2)")
 
         ## use the vectorized function to calculate the indeces;
         ## the result should be a (B,S,2) array
