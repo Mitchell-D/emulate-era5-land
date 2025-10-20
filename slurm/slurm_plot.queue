@@ -37,4 +37,6 @@ set runcmd = /rhome/mdodson/.micromamba/envs/learn-torch/bin/python
 #${runcmd} -u scripts/eval_gridstats.py
 #${runcmd} -u scripts/test_series_alignment.py
 #${runcmd} -u scripts/plot_static.py
-${runcmd} -u scripts/test_generators.py
+#${runcmd} -u scripts/test_generators.py
+#${runcmd} -u scripts/plot_samples.py
+${runcmd} -u scripts/plot_training.py

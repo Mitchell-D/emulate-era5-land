@@ -30,7 +30,8 @@ class AccLSTM(tnn.Module):
             static_feats, static_int_feats, static_embed_maps={},
             static_int_encoding_size=6, norm_coeffs={}, num_hidden_feats=32,
             num_hidden_layers=1, lstm_kwargs={}, normalized_inputs=True,
-            normalized_outputs=True, cycle_targets=[], teacher_forcing=False):
+            normalized_outputs=True, cycle_targets=[], teacher_forcing=False,
+            sample_retain_frequency=None):
         """
 
         :@param *_feats: number of feature dimensions in terminal layers
@@ -60,6 +61,9 @@ class AccLSTM(tnn.Module):
             This only applies to feat specified in cycle_targets.
         :@param lstm_kwargs: additional arguments to lstm available from:
             https://docs.pytorch.org/docs/stable/generated/torch.nn.LSTM.html
+        :@param sample_retain_frequency: If an integer not None, the AccLSTM
+            will store as an attribute the first sample and model outputs once
+            every provided number of batches.
         """
         super(AccLSTM, self).__init__()
         self._norm_in = normalized_inputs
@@ -101,6 +105,7 @@ class AccLSTM(tnn.Module):
             self._dcf_norms = torch.Tensor(np.array([
                     (md/si, sd/si) for ((md,sd),(mi,si)) in zip(dnorms, inorms)
                     ]).T)
+        print(f"{self._dcf_norms = }")
 
         ## cycled feat indices wrt model output vector
         self._cycle_ixs = tuple(target_feats.index(fk) for fk in cycle_targets)
@@ -129,6 +134,10 @@ class AccLSTM(tnn.Module):
         ## initialize a non-recurrent affine projection to the output space
         self._proj = tnn.Linear(self._nhnodes, len(self.feats["y"]))
 
+        self._srf = sample_retain_frequency
+        self._nb = 0 ## number of batches
+        self.samples = []
+
     def forward(self, window, horizon, static, static_int,
             target=None, random_init_state=False, device=None):
         """
@@ -137,6 +146,7 @@ class AccLSTM(tnn.Module):
         :@param window: (B, Sw, Fh)
         """
         _dt = window.dtype
+        ## if normalized inputs not expected, normalize them now.
         if not self._norm_in:
             window = (window-self.norm["w"][0])/self.norm["w"][1]
             horizon = (horizon-self.norm["h"][0])/self.norm["h"][1]
@@ -179,18 +189,24 @@ class AccLSTM(tnn.Module):
         C = C[:,-1,:]
 
         ## last feats from last window seq; guaranteed to be base cycle feats
-        pc_init = w[:,-1,-len(self.feats["c"]):]
+        pc_init = torch.full(
+                (horizon.size(0), horizon.size(1), len(self.feats["c"])),
+                float("nan"),
+                device=device,
+                dtype=_dt,
+                )
+        pc_init[:,0,:] = w[:,-1,-len(self.feats["c"]):]
         if self._teacher_forcing and self.training:
             ## extract all cycled output features
             tforce = target[...,self._cycle_ixs]
             if len(self._diff_cycle_ixs) != 0:
                 ## renorm just the diff'd output feats to integrated coords
                 dcf = tforce[...,self._diff_cycle_ixs]
-                # from above documentation: dg = dr (u/m) + (c/m)
+                ## from above documentation: dg = dr (u/m) + (c/m)
                 dcf = dcf * self._dcf_norms[1] + self._dcf_norms[0]
                 ## accumulate differentials and scale to start with init state
                 tforce[...,self._diff_cycle_ixs] = \
-                        pc_init[...,self._diff_cycle_ixs][:,None,:] \
+                        pc_init[:,0,self._diff_cycle_ixs][:,None,:] \
                         + torch.cumsum(dcf, dim=1).to(_dt)
 
         P = torch.zeros(horizon.size(0),horizon.size(1),len(self.feats["y"]))
@@ -200,7 +216,7 @@ class AccLSTM(tnn.Module):
         for ix in range(horizon.size(1)):
             ## run all samples/layers of the LSTM for this timestep
             tmpp,(L,C) = self._lstm(
-                    torch.cat([input_seq[:,ix,:], pc_init], axis=-1),
+                    torch.cat([input_seq[:,ix,:], pc_init[:,ix,:]], axis=-1),
                     (L.contiguous(),C.contiguous())
                     )
             ## project the lstm output to the norm'd prediction target values
@@ -214,10 +230,10 @@ class AccLSTM(tnn.Module):
             ## calculate the next cycled input
             if self._teacher_forcing and self.training:
                 ## if teacher forcing used, grab the next pre-calculated step
-                pc_init = tforce[:,ix+1,:]
+                pc_init[:,ix+1] = tforce[:,ix+1]
             else:
                 ## extract all outputs that are to be cycled back in
-                cfeats = tmpp[:,None,:][...,self._cycle_ixs]
+                cfeats = tmpp[...,self._cycle_ixs]
                 if len(self._diff_cycle_ixs) != 0:
                     ## subset to only the differentiated cycled features
                     dcf = cfeats[...,self._diff_cycle_ixs]
@@ -225,13 +241,22 @@ class AccLSTM(tnn.Module):
                     dcf = dcf * self._dcf_norms[1] + self._dcf_norms[0]
                     ## accumulate previous state with updated one
                     cfeats[...,self._diff_cycle_ixs] = \
-                            pc_init[:,None,self._diff_cycle_ixs] + dcf
+                            pc_init[:,ix,self._diff_cycle_ixs] + dcf
                 ## update new initial state as the calculated cycled feats.
-                pc_init = cfeats[:,0]
+                pc_init[:,ix+1] = cfeats
 
         ## if output normalization isn't requested, rescale to data coords
         if not self._norm_out:
             P = P*self.norms["y"][1].to(device)+self.norms["y"][0].to(device)
+
+        self._nb += 1
+        if not self._srf is None and self._nb % self._srf == 0:
+            ## Note that pc_init is the integrated target differentials if
+            ## teacher_forcing, else the integrated model outputs.
+            self.samples.append((
+                    (window[0], horizon[0], static[0], static_int[0]),
+                    (target[0], P[0], pc_init[0])
+                    ))
         return P
 
 model_options = {

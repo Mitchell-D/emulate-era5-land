@@ -13,6 +13,19 @@ from emulate_era5_land.generators import SparseTimegridSampleDataset
 from emulate_era5_land.generators import stsd_worker_init_fn
 from emulate_era5_land.generators import get_datasets_from_config
 from emulate_era5_land.models import AccLSTM,get_model_from_config
+from emulate_era5_land.evaluators import EvalSampleSources
+
+def move_to_device(data, device):
+    """ Move all tensors in a nested data structure to a particular device """
+    if isinstance(data, torch.Tensor):
+        return data.to(device)
+    elif isinstance(data, (list, tuple)):
+        return type(data)([move_to_device(item, device) for item in data])
+    elif isinstance(data, dict):
+        return {key: move_to_device(value, device)
+                for key, value in data.items()}
+    else:
+        return data # Return non-tensor data as is
 
 def get_optimizer(optimizer_type:str, optimizer_args:dict={}):
     assert optimizer_type in optimizer_options.keys(),optimizer_options.keys()
@@ -115,7 +128,8 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
             )
 
     ## initialize all the metric functions, which should include the loss func
-    metrics = {k:metric_options[k](**v) for k,v in config["metrics"].items()}
+    metrics = {k:metric_options[k](**v).to(device)
+            for k,v in config["metrics"].items()}
 
     ## initialize the model, providing default args that would be redundant
     model = get_model_from_config(config)
@@ -138,6 +152,29 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
     stopper = EarlyStopper(
             patience=config["setup"]["early_stop_patience"],
             min_delta=config["setup"].get("early_stop_delta", 0.),
+            )
+
+    ## Declare a EvalSampleSources instance to keep track of t/v data sources
+    params = {
+            "vidx_feat":("aux-static", "vidxs"),
+            "hidx_feat":("aux-static", "hidxs"),
+            "time_feat":("time", "epoch"),
+            "cov_feats":[], "cov_reduce_metric":None, "cov_reduce_axes":(1,),
+            }
+    dataset_feats = {
+            "aux-static":config["feats"]["aux_static_feats"], "time":["epoch"],
+            }
+    ess_t_name = (config["name"], "sample-sources", "train")
+    ess_t = EvalSampleSources(
+            params=params,
+            feats=dataset_feats,
+            meta={"model_config":config, "name":"_".join(ess_t_name)},
+            )
+    ess_v_name = (config["name"], "sample-sources", "val")
+    ess_v = EvalSampleSources(
+            params=params,
+            feats=dataset_feats,
+            meta={"model_config":config, "name":"_".join(ess_v_name)},
             )
 
     model = model.to(device)
@@ -196,6 +233,14 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
                     ## use gradients to update parameter tensors
                     optimizer.step()
                 epoch_metrics[mk].append(tmpm.cpu().detach().numpy())
+
+            ## update the sample tracking evaluator
+            a_d,a_s,t = at
+            ess_t.add_batch({
+                "aux-static":a_s.detach().numpy(),
+                "time":t.detach().numpy(),
+                })
+
         metric_pkl = model_dir.joinpath(
                 f"{config['name']}_metrics_train_{epoch:04}.pkl")
         pkl.dump(epoch_metrics, metric_pkl.open("wb"))
@@ -245,6 +290,13 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
                         tmpm = metric(pv,yv)
                         val_metrics[mk].append(tmpm.cpu().detach().numpy())
 
+                    ## update the sample tracking evaluator
+                    a_d,a_s,t = av
+                    ess_v.add_batch({
+                        "aux-static":a_s.detach().numpy(),
+                        "time":t.detach().numpy()
+                        })
+
                 metric_pkl = model_dir.joinpath(
                         f"{config['name']}_metrics_val_{epoch:04}.pkl")
                 pkl.dump(val_metrics, metric_pkl.open("wb"))
@@ -260,7 +312,20 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
             early_stop = stopper.early_stop(np.average(
                 metric_values["val"][config["setup"]["loss_metric"]][-1]
                 ))
+
+        ## if the model is collecting samples, save them to a pkl in model dir
+        if config["model"]["args"]["sample_retain_frequency"]:
+            pkl.dump(
+                move_to_device(model.samples, "cpu"),
+                model_dir.joinpath(f"{config['name']}_samples.pkl").open("wb")
+                )
+
+        ## update the metrics json
         json.dump(metric_values, metric_json_path.open("w"), indent=2)
         if early_stop:
             print(f"Early stop triggered!")
             break
+
+        ## Save the sample tracking pkls; de-indent this when functional
+        ess_t.to_pkl(model_dir.joinpath(ess_t.meta["name"]+".pkl"))
+        ess_v.to_pkl(model_dir.joinpath(ess_v.meta["name"]+".pkl"))

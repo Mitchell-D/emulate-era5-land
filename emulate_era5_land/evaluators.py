@@ -5,8 +5,8 @@ import pickle as pkl
 from datetime import datetime,timezone
 from typing import Callable
 from pathlib import Path
-import matplotlib.pyplot as plt
 
+REDUCE_FUNCS = {"min":np.amin, "mean":np.average, "max":np.amax, "sum":np.sum}
 
 def get_epoch_to_index_func(include_year=False):
     """
@@ -186,7 +186,7 @@ class EvalSampleSources(Evaluator):
     Keep track of when/where batch samples are drawn from
     """
     _required = ["vidx_feat", "hidx_feat", "time_feat", "cov_feats",
-            "cov_reduce_metric"]
+            "cov_reduce_metric", "cov_reduce_axes"]
     def __init__(self, params:dict, feats:dict,
             results:dict=None, meta:dict={}):
         """ See superclass initializer. """
@@ -198,48 +198,58 @@ class EvalSampleSources(Evaluator):
                 meta=meta,
                 )
 
-    @abstractmethod
     def _validate_params(self):
         """ Verify that the required parameters exist for this eval type """
-        for fk in _required:
+        for fk in self._required:
             assert fk in self._p.keys(), f"Required param: {fk}"
         for p in ["vidx_feat", "hidx_feat", "time_feat"]:
             dk,fk = self._p[p]
             assert dk in self._f.keys(), f"{dk} not in {list(self._f.keys())}"
             assert fk in self._f[dk], f"{fk} not in dataset {dk} {self._f[dk]}"
+        for dk,fk in self._p["cov_feats"]:
+            assert dk in self._f.keys(), f"{dk} not in {list(self._f.keys())}"
+            assert fk in self._f[dk], f"{fk} not in dataset {dk} {self._f[dk]}"
+        if len(self._p["cov_feats"]):
+            assert self._p["cov_reduce_metric"] in REDUCE_FUNCS.keys()
+            assert isinstance(self._p["cov_reduce_axes"], tuple)
+            assert all(isinstance(v,int) and v>0
+                    for v in self._p["cov_reduce_axes"])
 
-    @abstractmethod
-    def add_batch(self, batch_dict:dict):
+    def add_batch(self, bdict:dict):
         """ Update the partial evaluation data with a new batch of samples """
         if self._r is None:
-            self._r = {"vidxs":[], "hidxs":[], "etimes":[]}
+            self._r = {"vidxs":[], "hidxs":[], "etimes":[], "cov":[]}
         self._r["vidxs"].append(self.get_farray(
-                *self._p["vidx_feat"], bdict).astype(int))
+                *self._p["vidx_feat"], bdict).astype(np.uint16))
         self._r["hidxs"].append(self.get_farray(
-                *self._p["hidx_feat"], bdict).astype(int))
+                *self._p["hidx_feat"], bdict).astype(np.uint16))
+        ## take only the first timestep from each sample (includes window)
         self._r["etimes"].append(self.get_farray(
-                *self._p["time_feat"], bdict).astype(int))
+                *self._p["time_feat"], bdict)[:,0].astype(np.uint32))
+        if len(self._p["cov_feats"]):
+            self._r["cov"].append(np.stack([
+                REDUCE_FUNCS[self._p["cov_reduce_metric"]](
+                    self.get_farray(*cf,bdict,axis=self._p["cov_reduce_axes"]))
+                for cf in self._p["cov_feats"]
+                ], axis=-1))
 
-    @abstractmethod
     def final_results(self, time_format="epoch"):
         """
         Present the batch-wise arrays of indeces
 
-        :@param time_format: "epoch" or "ymdh". Determines how times are
+        :@param time_format: "epoch" or "ydh". Determines how times are
             represented. "epoch" results in integer epoch seconds, while "ydh"
             is has a 3-vector of integers (year, doy, hour)
         """
         assert time_format in ("epoch", "ydh")
         if time_format == "ydh":
             f = get_epoch_to_index_func(include_year=True)
-            ix_vfunc = np.vectorize(f, signature="()->(2)")
-            t = self._ix_vfunc(self._r["etimes"]).astype(np.uint16)
+            ix_vfunc = np.vectorize(f, signature="()->(3)")
+            t = [ix_vfunc(x).astype(np.uint16) for x in self._r["etimes"]]
         else:
             t = self._r["etimes"]
-        return {"vidxs":self._r["vidxs"],
-                "hidxs":self._r["hidxs"],
-                "times":t}
-
+        return {"vidxs":self._r["vidxs"], "hidxs":self._r["hidxs"],
+                "times":t, "cov":self._r["cov"]}
 
 class EvalTemporal(Evaluator):
     """
@@ -1763,14 +1773,14 @@ class EvalJointHist(Evaluator):
         return self.from_dict(pkl.load(pkl_path.open("rb")))
 
 EVALUATORS = {
-        #"EvalHorizon":EvalHorizon,
         "EvalTemporal":EvalTemporal,
+        "EvalSampleSources":EvalSampleSources,
+        #"EvalHorizon":EvalHorizon,
         #"EvalStatic":EvalStatic,
         #"EvalEfficiency":EvalEfficiency,
         #"EvalJointHist":EvalJointHist,
         #"EvalGridAxes":EvalGridAxes,
         }
-REDUCE_FUNCS = {"min":np.amin, "mean":np.average, "max":np.amax, "sum":np.sum}
 
 if __name__=="__main__":
     pass
