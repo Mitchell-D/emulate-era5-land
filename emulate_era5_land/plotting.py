@@ -465,44 +465,64 @@ def plot_lines(domain:list, ylines:list, fig_path:Path=None,
     plt.close()
     return
 
-def plot_time_lines_multiy(time_series, times, plot_spec={},
+def plot_lines_multiy(ylines, domain, plot_spec={},
         show=False, fig_path=None):
-    """ """
+    """
+    :@param ylines: list of lists such that the first level contains a sub-list
+        for each group of lines that share a domain
+    """
     ps = {"fig_size":(12,6), "dpi":80, "spine_increment":.01,
             "date_format":"%Y-%m-%d", "xtick_rotation":30}
     ps.update(plot_spec)
-    if len(times) != len(time_series[0]):
+    if len(domain) != len(ylines[0][0]):
         raise ValueError(
-                "Length of 'times' must match length of each time series.")
+                "Length of 'domain' must match length of each time series.")
 
     fig,host = plt.subplots(figsize=ps.get("fig_size"))
     fig.subplots_adjust(left=0.2 + ps.get("spine_increment") \
-            * (len(time_series) - 1))
+            * (len(ylines) - 1))
+
+    nlines = sum(len(yl) for yl in ylines)
 
     axes = [host]
-    colors = ps.get("colors", ["C" + str(i) for i in range(len(time_series))])
-    y_labels = ps.get("y_labels", [""] * len(time_series))
-    y_ranges = ps.get("y_ranges", [None] * len(time_series))
+    colors = ps.get("line_colors", ["C" + str(i) for i in range(nlines)])
+    line_labels = ps.get("line_labels", [""] * len(nlines))
+    line_style = ps.get("line_style", ["-"] * len(nlines))
+    y_labels = ps.get("y_labels", [""] * len(ylines))
+    y_ranges = ps.get("y_ranges", [None] * len(ylines))
+    y_scales = ps.get("y_scales", ["linear"] * len(ylines))
+
+    assert len(colors) == nlines
+    assert len(line_labels) == nlines
+    assert len(line_style) == nlines
+    assert len(y_labels) == len(ylines)
+    assert len(y_ranges) == len(ylines)
+    assert len(y_scales) == len(ylines)
 
     ## Create additional y-axes on the left, offset horizontally
-    for i in range(1, len(time_series)):
+    for i in range(1, len(ylines)):
         ax = host.twinx()
         #ax.spines["left"] = ax.spines["right"]
         ax.yaxis.set_label_position("left")
         ax.yaxis.set_ticks_position("left")
         ax.spines["left"].set_position(
                 ("axes", -1*ps.get("spine_increment") * i))
+        ax.set_yscale(y_scales[i])
         #ax.spines["right"].set_visible(False)
         axes.append(ax)
 
     ## Plot each series
-    for i, (ax, series) in enumerate(zip(axes, time_series)):
-        ax.plot(times, series, color=colors[i], label=y_labels[i])
-        ax.set_ylabel(y_labels[i], color=colors[i],
+    lc = 0
+    for i, (ax, series) in enumerate(zip(axes, ylines)):
+        for s in series:
+            ax.plot(domain, s, color=colors[lc], label=line_labels[lc],
+                    linestyle=line_style[lc])
+        ax.set_ylabel(y_labels[i], color=colors[lc],
                 fontsize=ps.get("label_size"))
-        ax.tick_params(axis="y", colors=colors[i])
+        ax.tick_params(axis="y", colors=colors[lc])
         if y_ranges[i] is not None:
             ax.set_ylim(y_ranges[i])
+        line_count += 1
 
     host.grid(ps.get("grid", False), **ps.get("grid_kwargs", {}))
     host.set_xlabel(ps.get("x_label", "Time"), fontsize=ps.get("label_size"))

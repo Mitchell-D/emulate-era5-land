@@ -31,8 +31,98 @@ if __name__=="__main__":
     grid_domain_shape = (261,586)
     plot_retained_samples = 16
 
-    ## plot a subset of samples retained by the model during training.
+    ## plot learning curves
     #'''
+    lc_metrics_simple = json.load(md.dir.joinpath(
+        f"{md.name}_metrics_simple.json").open("r"))
+    lc_simple = {}
+    for i in range(len(lc_metrics_simple["train_epochs"])):
+        for k in lc_metrics_simple["train"].keys():
+            if k not in lc_simple.keys():
+                lc_simple[k] = []
+            lc_simple[k].append([
+                lc_metrics_simple["train"][k][i],
+                lc_metrics_simple["val"][k][i],
+                ])
+
+    ## shaped (epoch,)
+    lr = np.squeeze(np.array(lc_metrics_simple["lr"]))
+
+    ## each shaped (epoch, t/v, mean/stddev)
+    for k in lc_simple.keys():
+        fig_path = fig_dir.joinpath(f"{md.name}_lc_epoch_{k}.png")
+        lc_simple[k] = np.asarray(lc_simple[k])
+        plot_lines_multiy(
+                domain=np.arange(lr.shape[0]),
+                ylines=[
+                    [lc_simple[k][:,0,0],lc_simple[k][:,1,0], ## t/v mean
+                        lc_simple[k][:,0,1],lc_simple[k][:,1,1]], ## t/v stddev
+                    [lr]
+                    ],
+                fig_path=fig_path,
+                plot_spec={
+                    "title":f"{md.name}",
+                    "xlabel":"Epoch",
+                    "ylabel":k,
+                    "y_labels":["Loss", "Learning Rate"]
+                    "y_ranges":[None,(1e-5,0.1)],
+                    "y_scales":["linear", "log"],
+                    "linestyle":["-","-","-.","-.","-"],
+                    "line_labels":["train mean", "val mean",
+                        "train stddev", "val stddev", "lr"]
+                    "line_colors":[
+                        "blue", "orange", "blue", "orange", "black"],
+                    }
+                )
+        print(f"Generated {fig_path.name}")
+
+    ## load and sort pkls containing batch-wise mean error values.
+    lc_pkls_t = list(sorted([
+        (p,p.stem.split("_")) for p in md.dir.iterdir()
+        if f"{md.name}_metrics_train" in p.stem
+        ], key=lambda p:int(p[1][-1])))
+    lc_pkls_v = list(sorted([
+        (p,p.stem.split("_")) for p in md.dir.iterdir()
+        if f"{md.name}_metrics_val" in p.stem
+        ], key=lambda p:int(p[1][-1])))
+
+    ## make dicts mapping the metrics to simple arrays
+    lc_all = {}
+    nbatches = None
+    for (lctp,_),(lcvp,_) in zip(lc_pkls_t,lc_pkls_v):
+        lct,lcv = pkl.load(lctp.open("rb")),pkl.load(lcvp.open("rb"))
+        for k in lct.keys():
+            if k not in lc_all.keys():
+                lc_all[k] = []
+            if nbatches is None:
+                nbatches = len(lct[k])
+            lc_all[k].append([lct[k],lcv[k]])
+
+    ## each shaped (epoch, batch, t/v)
+    lr = np.stack(
+        [lr for i in range(nbatches)],
+        axis=1,
+        ).reshape(-1)
+    for k in lc_all.keys():
+        fig_path = fig_dir.joinpath(f"{md.name}_lc_batch_{k}.png")
+        lc_all[k] = np.asarray(lc_all[k]).transpose(0,2,1).reshape(-1,2)
+        plot_lines(
+                domain=np.arange(lr.shape[0]),
+                ylines=[lc_all[k][:,0],lc_all[k][:,1],lr],
+                labels=["training", "validation", "lr"],
+                fig_path=fig_path,
+                plot_spec={
+                    "title":f"{md.name}",
+                    "xlabel":"Batch",
+                    "ylabel":k,
+                    "colors":["blue", "orange", "black"],
+                    }
+                )
+        print(f"Generated {fig_path.name}")
+    #'''
+
+    ## plot a subset of samples retained by the model during training.
+    '''
     inputs,outputs= np_collate_fn(pkl.load(
             md.dir.joinpath(f"{model_name}_samples.pkl").open("rb"),
             #map_location=torch.device("cpu"),
@@ -117,14 +207,14 @@ if __name__=="__main__":
             )
         print(f"Generated {fig_path.name}")
 
-    #'''
+    '''
 
     ## load+plot training and validation sample source evaluators
-    #'''
+    '''
     ss_evs = [
         Evaluator.from_pkl(md.dir.joinpath(p)) for p in [
-            "acclstm-era5-swm-23_sample-sources_train.pkl",
-            "acclstm-era5-swm-23_sample-sources_val.pkl",
+            f"{md.name}_sample-sources_train.pkl",
+            f"{md.name}_sample-sources_val.pkl",
             ]]
     ## load latitude and longitude from static data
     slabel,sdata = pkl.load(static_pkl_path.open("rb"))
@@ -143,7 +233,7 @@ if __name__=="__main__":
                 gd_count[res["vidxs"][bix][six],res["hidxs"][bix][six]] += 1
                 gd_batch[res["vidxs"][bix][six],res["hidxs"][bix][six]] = bix
             ## zero-indexing sequence axis shouldn't be needed for new evs
-            doys_bixs[bix, res["times"][bix][...,0,1]] += 1
+            doys_bixs[bix, res["times"][bix][...,1]] += 1
 
         fig_path = fig_dir.joinpath(ev.meta["name"]+"_doy-bixs.png")
         plot_heatmap(
@@ -194,5 +284,5 @@ if __name__=="__main__":
             fig_path=fig_path,
             )
         print(f"Generated {fig_path.name}")
-    #'''
+    '''
 

@@ -6,7 +6,7 @@ class AccLSTM(tnn.Module):
     """
     Sequence-to-sequence style LSTM that shares weights between the window and
     horizon sequences, and enables output cycling, accumulation of
-    differentiated outputs, as well as
+    differentiated outputs, as well as teacher forcing from target values.
 
     The model is structured in a window-horizon configuration where the window
     includes known output states that aren't available in the horizon, however

@@ -21,10 +21,10 @@
 #SBATCH -p standard --gres=gpu:1
 ###SBATCH -p shared --gres=gpu:1
 
-#SBATCH -J acclstm-rsm-23_train
+#SBATCH -J acclstm-rsm-32_train
 ###SBATCH --open-mode=append ### Don't overwrite existing files
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-23.out
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-23.err
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-32.out
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_train_acclstm-era5-swm-32.err
 
 ##module load cuda/11.8
 module load cuda/12.4

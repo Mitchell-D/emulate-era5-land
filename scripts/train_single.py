@@ -112,7 +112,7 @@ config = {
             },
         },
     "setup":{
-        "loss_metric":"fwmae",
+        "loss_metric":"mse",
         #"loss_metric":"mae",
         "optimizer_type":"nadam",
         "optimizer_args":{},
@@ -123,7 +123,7 @@ config = {
             "step_size_up":4,
             "step_size_down":8,
             "mode":"exp_range",
-            "gamma":0.7,
+            "gamma":0.8,
             },
         "initial_lr":1e-3,
         "early_stop_patience":40.,
@@ -133,9 +133,8 @@ config = {
         "val_frequency":1,
         },
     "seed":200007221750,
-    "name":"acclstm-era5-swm-23",
-    "notes":"like 19 but saving samples for analysis, no teacher forcing, " + \
-            "also separate wind components, and different LR parameters.",
+    "name":"acclstm-era5-swm-32",
+    "notes":"identical to 23 except no weighted mse",
     }
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
