@@ -4,6 +4,18 @@ from pathlib import Path
 
 from collections.abc import Mapping, Sequence
 
+def move_to_device(data, device):
+    """ Move all tensors in a nested data structure to a particular device """
+    if isinstance(data, torch.Tensor):
+        return data.to(device)
+    elif isinstance(data, (list, tuple)):
+        return type(data)([move_to_device(item, device) for item in data])
+    elif isinstance(data, dict):
+        return {key: move_to_device(value, device)
+                for key, value in data.items()}
+    else:
+        return data # Return non-tensor data as is
+
 def np_collate_fn(batch):
     """
     Pytorch collate_fn implementation that can handle nested dicts

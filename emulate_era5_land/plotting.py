@@ -471,7 +471,7 @@ def plot_lines_multiy(ylines, domain, plot_spec={},
     :@param ylines: list of lists such that the first level contains a sub-list
         for each group of lines that share a domain
     """
-    ps = {"fig_size":(12,6), "dpi":80, "spine_increment":.01,
+    ps = {"fig_size":(12,6), "dpi":80, "spine_increment":.05,
             "date_format":"%Y-%m-%d", "xtick_rotation":30}
     ps.update(plot_spec)
     if len(domain) != len(ylines[0][0]):
@@ -486,8 +486,8 @@ def plot_lines_multiy(ylines, domain, plot_spec={},
 
     axes = [host]
     colors = ps.get("line_colors", ["C" + str(i) for i in range(nlines)])
-    line_labels = ps.get("line_labels", [""] * len(nlines))
-    line_style = ps.get("line_style", ["-"] * len(nlines))
+    line_labels = ps.get("line_labels", [""] * nlines)
+    line_style = ps.get("line_style", ["-"] * nlines)
     y_labels = ps.get("y_labels", [""] * len(ylines))
     y_ranges = ps.get("y_ranges", [None] * len(ylines))
     y_scales = ps.get("y_scales", ["linear"] * len(ylines))
@@ -513,21 +513,30 @@ def plot_lines_multiy(ylines, domain, plot_spec={},
 
     ## Plot each series
     lc = 0
+    lines = []
     for i, (ax, series) in enumerate(zip(axes, ylines)):
         for s in series:
-            ax.plot(domain, s, color=colors[lc], label=line_labels[lc],
-                    linestyle=line_style[lc])
-        ax.set_ylabel(y_labels[i], color=colors[lc],
-                fontsize=ps.get("label_size"))
-        ax.tick_params(axis="y", colors=colors[lc])
+            lines.append(ax.plot(
+                domain, s, color=colors[lc], label=line_labels[lc],
+                linestyle=line_style[lc]))
+            lc += 1
+        ax.set_ylabel(y_labels[i], color=colors[lc-1],
+                fontsize=ps.get("label_fontsize"))
+        ax.tick_params(axis="y", colors=colors[lc-1])
         if y_ranges[i] is not None:
             ax.set_ylim(y_ranges[i])
-        line_count += 1
 
     host.grid(ps.get("grid", False), **ps.get("grid_kwargs", {}))
-    host.set_xlabel(ps.get("x_label", "Time"), fontsize=ps.get("label_size"))
+    host.set_xlabel(ps.get("x_label", "Time"),
+            fontsize=ps.get("label_fontsize"))
     host.xaxis.set_major_formatter(mdates.DateFormatter(ps.get("date_format")))
     host.tick_params(axis="x", rotation=ps.get("xtick_rotation"))
+    host.legend(
+            handles=[l[0] for l in lines],
+            labels=line_labels,
+            ncol=ps.get("legend_ncols", 1),
+            fontsize=ps.get("legend_fontsize"),
+            )
     if plot_spec.get("time_locator"):
         host.xaxis.set_major_locator({
             "minute":mdates.MinuteLocator,
@@ -544,7 +553,8 @@ def plot_lines_multiy(ylines, domain, plot_spec={},
     if ps.get("zero_axis"):
         host.axhline(0, color="black")
 
-    plt.title(ps.get("title", ""), fontdict={"fontsize":ps.get("title_size")})
+    plt.title(ps.get("title", ""),
+            fontdict={"fontsize":ps.get("title_fontsize")})
     plt.tight_layout()
     if show:
         plt.show()

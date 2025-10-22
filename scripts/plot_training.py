@@ -18,7 +18,8 @@ import matplotlib.pyplot as plt
 from emulate_era5_land.helpers import np_collate_fn
 from emulate_era5_land.evaluators import Evaluator
 from emulate_era5_land.ModelDir import ModelDir
-from emulate_era5_land.plotting import plot_heatmap,plot_lines,plot_geo_scalar
+from emulate_era5_land.plotting import plot_heatmap,plot_lines
+from emulate_era5_land.plotting import plot_lines_multiy,plot_geo_scalar
 
 if __name__=="__main__":
     proj_root = Path("/rhome/mdodson/emulate-era5-land")
@@ -61,17 +62,22 @@ if __name__=="__main__":
                     ],
                 fig_path=fig_path,
                 plot_spec={
-                    "title":f"{md.name}",
+                    "title":f"{md.name} {k}",
                     "xlabel":"Epoch",
                     "ylabel":k,
-                    "y_labels":["Loss", "Learning Rate"]
-                    "y_ranges":[None,(1e-5,0.1)],
+                    "y_labels":[f"{k} loss", "learning rate"],
+                    "y_ranges":[(0.,1.),(1e-5,0.1)],
                     "y_scales":["linear", "log"],
                     "linestyle":["-","-","-.","-.","-"],
                     "line_labels":["train mean", "val mean",
-                        "train stddev", "val stddev", "lr"]
+                        "train stddev", "val stddev", "lr"],
                     "line_colors":[
-                        "blue", "orange", "blue", "orange", "black"],
+                        "blue", "red", "purple", "orange", "black"],
+                    "spine_increment":.08
+                    "title_size":14,
+                    "title_fontsize":16,
+                    "label_fontsize":14,
+                    "legend_fontsize":14,
                     }
                 )
         print(f"Generated {fig_path.name}")
@@ -106,11 +112,31 @@ if __name__=="__main__":
     for k in lc_all.keys():
         fig_path = fig_dir.joinpath(f"{md.name}_lc_batch_{k}.png")
         lc_all[k] = np.asarray(lc_all[k]).transpose(0,2,1).reshape(-1,2)
-        plot_lines(
+        plot_lines_multiy(
                 domain=np.arange(lr.shape[0]),
-                ylines=[lc_all[k][:,0],lc_all[k][:,1],lr],
+                ylines=[[lc_all[k][:,0],lc_all[k][:,1]],[lr]],
+                fig_path=fig_path,
                 labels=["training", "validation", "lr"],
                 fig_path=fig_path,
+                plot_spec={
+                    "title":f"{md.name} {k}",
+                    "xlabel":"Batch",
+                    "ylabel":k,
+                    "y_labels":[f"{k} loss", "learning rate"],
+                    "y_ranges":[(0.,1.),(1e-5,0.1)],
+                    "y_scales":["linear", "log"],
+                    "linestyle":["-","-","-.","-.","-"],
+                    "line_labels":["train mean", "val mean",
+                        "train stddev", "val stddev", "lr"],
+                    "line_colors":[
+                        "blue", "red", "purple", "orange", "black"],
+                    "spine_increment":.08
+                    "title_size":14,
+                    "title_fontsize":16,
+                    "label_fontsize":14,
+                    "legend_fontsize":14,
+                    }
+
                 plot_spec={
                     "title":f"{md.name}",
                     "xlabel":"Batch",

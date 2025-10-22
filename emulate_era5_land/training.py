@@ -14,18 +14,7 @@ from emulate_era5_land.generators import stsd_worker_init_fn
 from emulate_era5_land.generators import get_datasets_from_config
 from emulate_era5_land.models import AccLSTM,get_model_from_config
 from emulate_era5_land.evaluators import EvalSampleSources
-
-def move_to_device(data, device):
-    """ Move all tensors in a nested data structure to a particular device """
-    if isinstance(data, torch.Tensor):
-        return data.to(device)
-    elif isinstance(data, (list, tuple)):
-        return type(data)([move_to_device(item, device) for item in data])
-    elif isinstance(data, dict):
-        return {key: move_to_device(value, device)
-                for key, value in data.items()}
-    else:
-        return data # Return non-tensor data as is
+from emulate_era5_land.helpers import move_to_device
 
 def get_optimizer(optimizer_type:str, optimizer_args:dict={}):
     assert optimizer_type in optimizer_options.keys(),optimizer_options.keys()
@@ -187,12 +176,16 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
     json.dump(config, config_path.open("w"), indent=2)
     metric_json_path = model_dir.joinpath(
             f"{config['name']}_metrics_simple.json")
+    ## update the batch-wise metrics pkl
+    metric_pkl_path = model_dir.joinpath(f"{config['name']}_metrics_all.pkl")
 
     ## run the training loop
     early_stop = False
     dl_train_iter = iter(dl_train)
     dl_val_iter = iter(dl_val)
-    metric_values = {
+
+    ## epoch-wise metrics for the 'simple' json, updated once per epoch
+    metrics_epoch = {
             "train":{mk:[] for mk in metrics.keys()},
             "val":{mk:[] for mk in metrics.keys()},
             "train_epochs":[],
@@ -200,118 +193,126 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
             "lr":[],
             }
     min_loss = float("inf")
-    assert config["setup"]["loss_metric"] in metric_values["train"].keys(),\
-            f"{loss_metric=} must match the key of a defined metric."
+    lm = config["setup"]["loss_metric"]
+    assert lm in metrics_epoch["train"].keys(),\
+            f"{lm = } must match the key of a defined metric."
+
+    ## batch-wise metrics for the pkl, updated once per epoch
+    metrics_batch = {
+            "train":{mk:[] for mk in metrics.keys()},
+            "val":{mk:[] for mk in metrics.keys()},
+            "lr":[],
+            }
     for epoch in range(config["setup"]["max_epochs"]):
         if debug:
             print(f"Starting Epoch {epoch}")
+
+        ## make a new list for batch-wise metric entries within this epoch
+        for mk in metrics_batch["train"].keys():
+            metrics_batch["train"][mk].append([])
+
         ## train on a series of batches for this epoch.
-        epoch_metrics = {mk:[] for mk in metrics.keys()}
         model.train()
         for bix in range(config["setup"]["batches_per_epoch"]):
+            ## draw a batch from the training data loader
             try:
-                xt,yt,at = next(dl_train_iter)
+                xt,yt,at = move_to_device(next(dl_train_iter), device)
             except StopIteration:
                 if debug:
                     print(f"Re-initializing training generator!")
                 dl_train_iter = iter(dl_train)
-                xt,yt,at = next(dl_train_iter)
+                xt,yt,at = move_to_device(next(dl_train_iter), device)
             wt,ht,st,sit,initt = xt
             yt, = yt
-            wt = wt.to(device)
-            ht = ht.to(device)
-            st = st.to(device)
-            sit = [X.to(device) for X in sit]
-            yt = yt.to(device)
+
+            ## run the model
             pt = model(wt, ht, st, sit, yt, device=device)
+
+            ## evaluate the metrics
             for mk,metric in metrics.items():
                 tmpm = metric(pt,yt)
-                if mk==config["setup"]["loss_metric"]:
+                if mk==lm:
                     optimizer.zero_grad()
                     ## calculate gradients wrt parameter tensors
                     tmpm.backward()
                     ## use gradients to update parameter tensors
                     optimizer.step()
-                epoch_metrics[mk].append(tmpm.cpu().detach().numpy())
+                ## update dicts tracking training progress
+                tmpm_np = tmpm.cpu().detach().numpy()
+                metrics_batch["train"][mk][-1].append(tmpm_np)
 
             ## update the sample tracking evaluator
             a_d,a_s,t = at
             ess_t.add_batch({
-                "aux-static":a_s.detach().numpy(),
-                "time":t.detach().numpy(),
+                "aux-static":a_s.cpu().detach().numpy(),
+                "time":t.cpu().detach().numpy(),
                 })
 
-        metric_pkl = model_dir.joinpath(
-                f"{config['name']}_metrics_train_{epoch:04}.pkl")
-        pkl.dump(epoch_metrics, metric_pkl.open("wb"))
-        ## for now, store every batch's metrics. maybe consider average later.
-        for mk,epms in epoch_metrics.items():
-            metric_values["train"][mk].append(
-                    tuple(map(float, (np.average(epms), np.std(epms))))
-                    )
-        metric_values["train_epochs"].append(epoch)
-        metric_values["lr"].append(schedule.get_last_lr())
+        ## Aggregate batch-wise metrics for simpler epoch-wise stats
+        for mk in metrics_batch["train"].keys():
+            metrics_epoch["train"][mk].append([
+                float(np.average(metrics_batch["train"][mk][-1])),
+                float(np.std(metrics_batch["train"][mk][-1])),
+                ])
+
+        ## update epoch-wise epoch counter and learning rate
+        metrics_epoch["train_epochs"].append(epoch)
+        metrics_epoch["lr"].append(schedule.get_last_lr())
+        metrics_batch["lr"].append(schedule.get_last_lr())
         schedule.step()
 
         ## save the model if training loss went down. validation is more
         ## traditional, but I can manually select the model at the bottom of
         ## the valley of generality
-        lm = config["setup"]["loss_metric"]
-        if min_loss > metric_values["train"][lm][-1][0]:
+        if min_loss > metrics_epoch["train"][lm][-1][0]:
             torch.save(
-                    model.state_dict(),
-                    model_dir.joinpath(
-                        f"{config['name']}_state_{epoch:04}.pwf")
-                    )
+                model.state_dict(),
+                model_dir.joinpath(f"{config['name']}_state_{epoch:04}.pwf")
+                )
 
         ## run validation every val_frequency epochs
         if epoch % config["setup"]["val_frequency"] == 0:
-            val_metrics = {mk:[] for mk in metrics.keys()}
+            ## make a new list for batch-wise metric entries within this epoch
+            for mk in metrics_batch["val"].keys():
+                metrics_batch["val"][mk].append([])
+
+            ## disable gradient tracking and execute validation
             model.eval()
             with torch.no_grad():
                 for bix in range(config["setup"]["batches_per_epoch"]):
                     try:
-                        xv,yv,av = next(dl_val_iter)
+                        xv,yv,av = move_to_device(next(dl_val_iter), device)
                     except StopIteration:
                         if debug:
                             print(f"Re-initializing validation generator!")
                         dl_val_iter = iter(dl_val)
-                        xv,yv,av = next(dl_val_iter)
+                        xv,yv,av = move_to_device(next(dl_val_iter), device)
                     wv,hv,sv,siv,initv = xv
                     yv, = yv
-                    wv = wv.to(device)
-                    hv = hv.to(device)
-                    sv = sv.to(device)
-                    siv = [X.to(device) for X in siv]
-                    yv = yv.to(device)
                     pv = model(wv, hv, sv, siv, yv, device=device)
 
                     for mk,metric in metrics.items():
                         tmpm = metric(pv,yv)
-                        val_metrics[mk].append(tmpm.cpu().detach().numpy())
+                        tmpm_np = tmpm.cpu().detach().numpy()
+                        metrics_batch["val"][mk][-1].append(tmpm_np)
 
                     ## update the sample tracking evaluator
                     a_d,a_s,t = av
                     ess_v.add_batch({
-                        "aux-static":a_s.detach().numpy(),
-                        "time":t.detach().numpy()
+                        "aux-static":a_s.cpu().detach().numpy(),
+                        "time":t.cpu().detach().numpy()
                         })
 
-                metric_pkl = model_dir.joinpath(
-                        f"{config['name']}_metrics_val_{epoch:04}.pkl")
-                pkl.dump(val_metrics, metric_pkl.open("wb"))
+                ## Aggregate batch-wise metrics for simpler epoch-wise stats
+                for mk in metrics_batch["val"].keys():
+                    metrics_epoch["val"][mk].append([
+                        float(np.average(metrics_batch["val"][mk][-1])),
+                        float(np.std(metrics_batch["val"][mk][-1])),
+                        ])
 
-                ## update validation metrics for this epoch
-                for mk,epms in val_metrics.items():
-                    metric_values["val"][mk].append(
-                            tuple(map(float, (np.average(epms), np.std(epms))))
-                            )
-                metric_values["val_epochs"].append(epoch)
-
-            ## check for early stopping given all batches in this epoch
-            early_stop = stopper.early_stop(np.average(
-                metric_values["val"][config["setup"]["loss_metric"]][-1]
-                ))
+            ## check for early stopping given mean error of all batches in
+            ## the most recent epoch
+            early_stop = stopper.early_stop(metrics_epoch["val"][lm][-1][0])
 
         ## if the model is collecting samples, save them to a pkl in model dir
         if config["model"]["args"]["sample_retain_frequency"]:
@@ -320,8 +321,11 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
                 model_dir.joinpath(f"{config['name']}_samples.pkl").open("wb")
                 )
 
-        ## update the metrics json
-        json.dump(metric_values, metric_json_path.open("w"), indent=2)
+        ## update the batch-wise metric pkl
+        pkl.dump(metrics_batch, metric_pkl_path.open("wb"))
+
+        ## update the epoch-wise metrics json
+        json.dump(metrics_epoch, metric_json_path.open("w"), indent=2)
         if early_stop:
             print(f"Early stop triggered!")
             break

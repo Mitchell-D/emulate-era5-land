@@ -20,7 +20,7 @@ timegrids = [
         proj_root.joinpath(
             f"data/timegrids/timegrid_era5_{y}.h5"
             ).as_posix()
-        for y in range(2012,2019)
+        for y in range(2012,2018)
         ]
 config = {
     "feats":{
@@ -50,7 +50,7 @@ config = {
             "vt-high":[0,  3,  5,  6, 18, 19],
             },
         "window_size":48,
-        "horizon_size":96,
+        "horizon_size":120,
         "norm_coeffs":info_era5["norm-coeffs"],
         },
     "data":{
@@ -92,7 +92,7 @@ config = {
     "metrics":{
             "mse":{"reduction":"mean"},
             "mae":{"reduction":"mean"},
-            "fwmae":{"feature_weights":[8,3,1,1]},
+            "fwmae":{"feature_weights":[8,4,2,1]},
             },
     "model":{
         "type":"acclstm",
@@ -112,29 +112,29 @@ config = {
             },
         },
     "setup":{
-        "loss_metric":"mse",
+        "loss_metric":"fwmae",
         #"loss_metric":"mae",
         "optimizer_type":"nadam",
         "optimizer_args":{},
         "schedule_type":"cyclic",
         "schedule_args":{
-            "base_lr":1e-4,
-            "max_lr":5e-3,
-            "step_size_up":4,
-            "step_size_down":8,
+            "base_lr":1e-3,
+            "max_lr":1e-2,
+            "step_size_up":3,
+            "step_size_down":9,
             "mode":"exp_range",
-            "gamma":0.8,
+            "gamma":0.9,
             },
         "initial_lr":1e-3,
-        "early_stop_patience":40.,
+        "early_stop_patience":30.,
         "early_stop_delta":0.,
         "max_epochs":2048,
-        "batches_per_epoch":128,
+        "batches_per_epoch":64,
         "val_frequency":1,
         },
     "seed":200007221750,
-    "name":"acclstm-era5-swm-32",
-    "notes":"identical to 23 except no weighted mse",
+    "name":"acclstm-era5-swm-43",
+    "notes":"var 33; faster learning rate bounds",
     }
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
