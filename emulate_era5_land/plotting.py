@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.transforms import Affine2D
 from matplotlib.lines import Line2D
 from matplotlib.colors import ListedColormap,LinearSegmentedColormap
+from matplotlib.gridspec import GridSpec
 import matplotlib.dates as mdates
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -465,9 +466,180 @@ def plot_lines(domain:list, ylines:list, fig_path:Path=None,
     plt.close()
     return
 
-def plot_lines_multiy(ylines, domain, plot_spec={},
+def plot_lines_and_heatmap_split(
+        heatmap, hdomain, vdomain, hlines=None, vlines=None, plot_spec={},
+        fig_path=None, show=False):
+    """
+    2/3 pane plot with a heatmap and either/both a subplot along the horizontal
+    or vertical axes depicting lines which may share an axis, and have at least
+    one independent axis.
+
+    :@param heatmap: 2d array of float values.
+    :@param hdomain: Array of coordinate values corresponding to the horizontal
+        axis of the heatmap array.
+    :@param vdomain: Array of coordinate values corresponding to the vertical
+        axis of the heatmap array.
+    :@param hlines: List of line arrays or 2-tuples of arrays (domain, line)
+        corresponding to each line plotted with a common horizontal axis.
+        If an element is just an array, it must have the same size as hdomain.
+        Otherwise a 2-tuple that contains a domain as well (which should still
+        be in the same value range as the heatmap coordinates)
+    :@param vlines: see analogous hlines
+    """
+    ps = {"fig_size":None, "dpi":200, "width_ratio":.33, "height_ratio":.33,
+            "width_space":.1, "height_space":.1, "date_format":"%Y-%m-%d",
+            "cmap":"nipy_spectral", "hlines_bottom":True, "vlines_left":True,
+            "xtick_rotation":30, "ytick_rotation":30, "norm":"linear",
+            "label_fontsize":12, "title_fontsize":14, "cb_orient":"vertical",
+            "cb_shrink":.9,
+            #"hines_wrt_independent":True, "vines_wrt_independent":True,
+            }
+    ps.update(plot_spec)
+
+    fig = plt.figure(figsize=ps.get("fig_size"), dpi=ps.get("dpi"))
+
+    has_hlines = not hlines is None
+    has_vlines = not vlines is None
+    has_both = has_hlines and has_vlines
+
+    sp_order = (
+            (1,2)[has_hlines], ## number of rows
+            (1,2)[has_vlines], ## number of columns
+            )
+    sp_ratios = {}
+    if has_vlines:
+        wr = ps.get("width_ratio")
+        sp_ratios["width_ratios"] = [wr,1-wr]
+    if has_hlines:
+        hr = ps.get("height_ratio")
+        sp_ratios["height_ratios"] = [1-hr,hr]
+    gs = GridSpec(
+            *sp_order,
+            **sp_ratios,
+            wspace=ps.get("width_space"),
+            hspace=ps.get("height_space"),
+            )
+
+    vl_ax_ix = None if not has_vlines else int(not ps.get("vlines_left"))
+    hl_ax_ix = None if not has_hlines else int(ps.get("hlines_bottom"))
+
+    if has_both:
+        ax_hm = fig.add_subplot(
+                gs[int(not bool(vl_ax_ix)), int(not bool(hl_ax_ix))]
+                )
+        ax_hl = fig.add_subplot(
+                gs[int(not bool(vl_ax_ix)), hl_ax_ix],
+                sharex=ax_hm,
+                )
+        ax_vl = fig.add_subplot(
+                gs[vl_ax_ix, int(not bool(hl_ax_ix))],
+                sharey=ax_hm,
+                )
+    elif has_vlines:
+        ax_hm = fig.add_subplot(gs[int(not bool(vl_ax_ix))])
+        ax_vl = fig.add_subplot(gs[vl_ax_ix], sharey=ax_hm)
+        ax_hl = None
+    elif has_hlines:
+        ax_hm = fig.add_subplot(gs[int(not bool(hl_ax_ix))])
+        ax_hl = fig.add_subplot(gs[hl_ax_ix], sharex=ax_hm)
+        ax_vl = None
+
+    ax_hm.set_ylabel(ps.get("hm_ylabel"), fontsize=ps.get("label_fontsize"))
+    ax_hm.set_xlabel(ps.get("hm_xlabel"), fontsize=ps.get("label_fontsize"))
+    plot_hm = ax_hm.pcolormesh(
+            hdomain, vdomain, heatmap,
+            cmap=ps.get("cmap"),
+            norm=ps.get("norm"),
+            vmin=ps.get("hm_vmin"),
+            vmax=ps.get("hm_vmax"),
+            )
+
+    cb_axes=None
+    if ps.get("cb_orient")=="vertical":
+        cb_axes = [ax_hm] if not has_hlines else [ax_hm, ax_hl]
+    elif ps.get("cb_orient")=="horizontal":
+        cb_axes = [ax_hm] if not has_hlines else [ax_hm, ax_hl]
+    cbar_hm = fig.colorbar(plot_hm, ax=cb_axes, shrink=ps.get("cb_shrink"))
+
+    plot_vls = []
+    if has_vlines:
+        labels = ps.get("vl_labels", [""]*len(vlines))
+        linestyles = ps.get("vl_linestyles", ["-"]*len(vlines))
+        colors = ps.get("vl_colors",
+                ["C" + str(i) for i in range(len(vlines))])
+        plt.setp(ax_hm.get_yticklabels(), visible=False)
+        if ps.get("vl_zero_yaxis"):
+            ax_vl.axvline(0, color="black")
+        if ps.get("vl_zero_xaxis"):
+            ax_vl.axhline(0, color="black")
+        for i,vl in enumerate(vlines):
+            if isinstance(vl, (tuple, list)) and len(vl) == 2:
+                tmp_domain,tmp_line = vl
+                tmp_domain = np.asarray(tmp_domain)
+                tmp_line = np.asarray(tmp_line)
+            else:
+                tmp_domain = np.asarray(vdomain)
+                tmp_line = np.asarray(vl)
+            assert len(tmp_domain.shape)==1,tmp_domain.shape
+            assert len(tmp_line.shape)==1,tmp_line.shape
+            assert tmp_domain.size == tmp_line.size, \
+                    f"{tmp_domain.shape=} {tmp_line.shape=}"
+            plot_vls.append(ax_vl.plot(
+                tmp_domain, tmp_line, label=labels[i], color=colors[i],
+                linestyle=linestyles[i],
+                ))
+        ax_vl.set_yscale(ps.get("vl_yscale", "linear"))
+        ax_vl.legend()
+        ax_vl.set_ylabel(ps.get("vl_ylabel"),fontsize=ps.get("label_fontsize"))
+        ax_vl.set_xlabel(ps.get("vl_xlabel"),fontsize=ps.get("label_fontsize"))
+
+    plot_hls = []
+    if has_hlines:
+        labels = ps.get("hl_labels", [""]*len(hlines))
+        linestyles = ps.get("hl_linestyles", ["-"]*len(hlines))
+        colors = ps.get("hl_colors",
+                ["C" + str(i) for i in range(len(hlines))])
+        plt.setp(ax_hm.get_xticklabels(), visible=False)
+        if ps.get("hl_zero_yaxis"):
+            ax_hl.axvline(0, color="black")
+        if ps.get("hl_zero_xaxis"):
+            ax_hl.axhline(0, color="black")
+        for i,hl in enumerate(hlines):
+            if isinstance(hl, (tuple, list)) and len(hl) == 2:
+                tmp_domain,tmp_line = hl
+                tmp_domain = np.asarray(tmp_domain)
+                tmp_line = np.asarray(tmp_line)
+            else:
+                tmp_domain = np.asarray(hdomain)
+                tmp_line = np.asarray(hl)
+            assert len(tmp_domain.shape)==1,tmp_domain.shape
+            assert len (tmp_line.shape)==1,tmp_line.shape
+            assert tmp_domain.size == tmp_line.size, \
+                    f"{tmp_domain.shape=} {tmp_line.shape=}"
+            plot_hls.append(ax_hl.plot(
+                tmp_domain, tmp_line, label=labels[i], color=colors[i],
+                linestyle=linestyles[i], **ps.get("hl_kwargs", {})
+                ))
+        ax_hl.set_yscale(ps.get("hl_yscale", "linear"))
+        ax_hl.legend()
+        ax_hl.set_ylabel(ps.get("hl_ylabel"),fontsize=ps.get("label_fontsize"))
+        ax_hl.set_xlabel(ps.get("hl_xlabel"),fontsize=ps.get("label_fontsize"))
+
+    plt.suptitle(ps.get("title", ""),
+            fontdict={"fontsize":ps.get("title_fontsize")})
+    plt.tight_layout()
+    if show:
+        plt.show()
+    if not fig_path is None:
+        fig.savefig(fig_path, bbox_inches="tight", dpi=plot_spec.get("dpi"))
+    plt.close()
+
+def plot_lines_multiy(domain, ylines, plot_spec={},
         show=False, fig_path=None):
     """
+    Lines on the same plot sharing an x domain, but able to have one of
+    multiple independent vertical axes.
+
     :@param ylines: list of lists such that the first level contains a sub-list
         for each group of lines that share a domain
     """

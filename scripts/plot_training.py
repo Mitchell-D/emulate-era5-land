@@ -18,15 +18,16 @@ import matplotlib.pyplot as plt
 from emulate_era5_land.helpers import np_collate_fn
 from emulate_era5_land.evaluators import Evaluator
 from emulate_era5_land.ModelDir import ModelDir
-from emulate_era5_land.plotting import plot_heatmap,plot_lines
-from emulate_era5_land.plotting import plot_lines_multiy,plot_geo_scalar
+from emulate_era5_land.plotting import plot_heatmap,plot_lines,plot_geo_scalar
+from emulate_era5_land.plotting import plot_lines_multiy
+from emulate_era5_land.plotting import plot_lines_and_heatmap_split
 
 if __name__=="__main__":
     proj_root = Path("/rhome/mdodson/emulate-era5-land")
     model_parent_dir = proj_root.joinpath("data/models")
     static_pkl_path = proj_root.joinpath("data/static/era5_static.pkl")
     fig_dir = proj_root.joinpath("figures/training")
-    model_name = "acclstm-era5-swm-23"
+    model_name = "acclstm-era5-swm-33"
     md = ModelDir(model_parent_dir.joinpath(model_name))
 
     grid_domain_shape = (261,586)
@@ -73,7 +74,7 @@ if __name__=="__main__":
                         "train stddev", "val stddev", "lr"],
                     "line_colors":[
                         "blue", "red", "purple", "orange", "black"],
-                    "spine_increment":.08
+                    "spine_increment":.08,
                     "title_size":14,
                     "title_fontsize":16,
                     "label_fontsize":14,
@@ -82,6 +83,72 @@ if __name__=="__main__":
                 )
         print(f"Generated {fig_path.name}")
 
+    loss_bounds,loss_bins = (0,1),64
+    lc_all = pkl.load(md.dir.joinpath(f"{md.name}_metrics_all.pkl").open("rb"))
+    ## add one to bins so that they span the min/max values of each
+    loss_bin_bounds = np.linspace(*loss_bounds, loss_bins+1)
+    loss_bin_centers = loss_bin_bounds[:-1] + 1/(loss_bins*2)
+    hm_train,hm_val = None,None
+    for k in lc_all["train"].keys():
+        if hm_train is None:
+            n_epochs = len(lc_all["train"][k])
+            hm_train = np.full((loss_bins, n_epochs), 0.)
+            hm_val = np.full((loss_bins, n_epochs), 0.)
+
+        tix = np.asarray(lc_all["train"][k]) - loss_bounds[0] \
+                / (loss_bounds[1] - loss_bounds[0])
+        vix = np.asarray(lc_all["val"][k]) - loss_bounds[0] \
+                / (loss_bounds[1] - loss_bounds[0])
+        tix = np.floor(np.clip(tix*loss_bins, 0, loss_bins-1)).astype(int)
+        vix = np.floor(np.clip(vix*loss_bins, 0, loss_bins-1)).astype(int)
+
+        for eix in range(tix.shape[0]):
+            for bix in range(tix.shape[1]):
+                hm_train[tix[eix,bix],eix] += 1
+                hm_val[vix[eix,bix],eix] += 1
+        fig_path = fig_dir.joinpath(f"{md.name}_lc_hm-train_{k}.png")
+        plot_lines_and_heatmap_split(
+                heatmap=np.where(hm_train==0,np.nan,hm_train),
+                hdomain=np.arange(1,n_epochs+1),
+                vdomain=loss_bin_centers,
+                hlines=[lr],
+                plot_spec={
+                    "title":f"Training {k} counts, learning rate ({md.name})",
+                    "hl_xlabel":"Epoch",
+                    "hm_ylabel":f"Training {k}",
+                    "hl_ylabel":f"Learning Rate",
+                    "hl_labels":["Learning Rate"],
+                    "hl_yscale":"log",
+                    },
+                fig_path=fig_path,
+                )
+        print(f"Generated {fig_path.name}")
+        hm_diff = hm_train-hm_val
+        fig_path = fig_dir.joinpath(f"{md.name}_lc_hm-diff_{k}.png")
+        plot_lines_and_heatmap_split(
+                heatmap=np.where(hm_diff==0,np.nan,hm_diff),
+                hdomain=np.arange(1,n_epochs+1),
+                vdomain=loss_bin_centers,
+                hlines=[lr],
+                plot_spec={
+                    "title":f"Count diff train-val {k} ({md.name})",
+                    "hl_xlabel":"Epoch",
+                    "hm_ylabel":f"Training {k}",
+                    "hl_ylabel":f"Learning Rate",
+                    "cmap":"RdBu",
+                    "hl_zero_xaxis":True,
+                    "hl_labels":["Learning Rate"],
+                    "hl_yscale":"log",
+                    },
+                fig_path=fig_path,
+                )
+        print(f"Generated {fig_path.name}")
+    #'''
+
+    ## old method where lc_all maps metric keys to (B,2) train/val per batch
+    ## need to modify in order to make compatible, but probably better to just
+    ## convert to the new single-pkl format when possible
+    '''
     ## load and sort pkls containing batch-wise mean error values.
     lc_pkls_t = list(sorted([
         (p,p.stem.split("_")) for p in md.dir.iterdir()
@@ -92,7 +159,7 @@ if __name__=="__main__":
         if f"{md.name}_metrics_val" in p.stem
         ], key=lambda p:int(p[1][-1])))
 
-    ## make dicts mapping the metrics to simple arrays
+    ## make dicts mapping the metrics to simple arrays (old method)
     lc_all = {}
     nbatches = None
     for (lctp,_),(lcvp,_) in zip(lc_pkls_t,lc_pkls_v):
@@ -103,15 +170,16 @@ if __name__=="__main__":
             if nbatches is None:
                 nbatches = len(lct[k])
             lc_all[k].append([lct[k],lcv[k]])
-
     ## each shaped (epoch, batch, t/v)
     lr = np.stack(
         [lr for i in range(nbatches)],
         axis=1,
         ).reshape(-1)
+    lc_all[k] = np.asarray(lc_all[k]).transpose(0,2,1).reshape(-1,2)
+
+    ## lc_all maps train/val/lr to
     for k in lc_all.keys():
         fig_path = fig_dir.joinpath(f"{md.name}_lc_batch_{k}.png")
-        lc_all[k] = np.asarray(lc_all[k]).transpose(0,2,1).reshape(-1,2)
         plot_lines_multiy(
                 domain=np.arange(lr.shape[0]),
                 ylines=[[lc_all[k][:,0],lc_all[k][:,1]],[lr]],
@@ -145,7 +213,7 @@ if __name__=="__main__":
                     }
                 )
         print(f"Generated {fig_path.name}")
-    #'''
+    '''
 
     ## plot a subset of samples retained by the model during training.
     '''
