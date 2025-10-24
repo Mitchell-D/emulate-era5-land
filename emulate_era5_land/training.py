@@ -54,7 +54,8 @@ class EarlyStopper:
 
 class FeatureWeightedL1Loss(torch.nn.Module):
     """
-    Simple class for applying independent coefficient weights to
+    Simple loss metric class for applying independent coefficient weights to
+    each feature
     """
     def __init__(self, feature_weights):
         super(FeatureWeightedL1Loss, self).__init__()
@@ -117,8 +118,14 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
             )
 
     ## initialize all the metric functions, which should include the loss func
-    metrics = {k:metric_options[k](**v).to(device)
-            for k,v in config["metrics"].items()}
+    metrics = {}
+    for k,v in config["metrics"].items():
+        if isinstance(v, (list,tuple)):
+            assert len(v)==2, f"{v} must be 2-tuple (type, args)"
+        elif isinstance(v, dict):
+            v = (k, v)
+        mtype,margs = v
+        metrics[k] = metric_options[mtype](**margs).to(device)
 
     ## initialize the model, providing default args that would be redundant
     model = get_model_from_config(config)

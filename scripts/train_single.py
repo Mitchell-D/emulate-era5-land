@@ -90,9 +90,13 @@ config = {
             },
         },
     "metrics":{
-            "mse":{"reduction":"mean"},
-            "mae":{"reduction":"mean"},
-            "fwmae":{"feature_weights":[8,4,2,1]},
+            "mse":("mse", {"reduction":"mean"}),
+            "mae":("mae", {"reduction":"mean"}),
+            "fwmae":("fwmae", {"feature_weights":[8,4,2,1]}),
+            "mae-swm-7":("fwmae", {"feature_weights":[1,0,0,0]}),
+            "mae-swm-28":("fwmae", {"feature_weights":[0,1,0,0]}),
+            "mae-swm-100":("fwmae", {"feature_weights":[0,0,1,0]}),
+            "mae-swm-289":("fwmae", {"feature_weights":[0,0,0,1]}),
             },
     "model":{
         "type":"acclstm",
@@ -100,7 +104,7 @@ config = {
             "static_int_encoding_size":6,
             "num_hidden_feats":128,
             "num_hidden_layers":6,
-            "lstm_kwargs":{},
+            "lstm_kwargs":{"dropout":.2},
             "normalized_inputs":True,
             "normalized_outputs":True,
             "cycle_targets":[
@@ -113,17 +117,16 @@ config = {
         },
     "setup":{
         "loss_metric":"fwmae",
-        #"loss_metric":"mae",
         "optimizer_type":"nadam",
         "optimizer_args":{},
         "schedule_type":"cyclic",
         "schedule_args":{
-            "base_lr":1e-3,
-            "max_lr":1e-2,
+            "base_lr":5e-4,
+            "max_lr":5e-3,
             "step_size_up":3,
             "step_size_down":9,
             "mode":"exp_range",
-            "gamma":0.9,
+            "gamma":1.0,
             },
         "initial_lr":1e-3,
         "early_stop_patience":30.,
@@ -133,8 +136,8 @@ config = {
         "val_frequency":1,
         },
     "seed":200007221750,
-    "name":"acclstm-era5-swm-43",
-    "notes":"var 33; faster learning rate bounds",
+    "name":"acclstm-era5-swm-45",
+    "notes":"var 33; No LR diminishment",
     }
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
