@@ -32,6 +32,8 @@ if __name__=="__main__":
 
     grid_domain_shape = (261,586)
     plot_retained_samples = 16
+    hm_loss_bounds,hm_loss_bins = (0,1),128
+    desc = md.config["notes"]
 
     ## plot learning curves
     #'''
@@ -63,11 +65,15 @@ if __name__=="__main__":
                     ],
                 fig_path=fig_path,
                 plot_spec={
-                    "title":f"{md.name} {k}",
-                    "xlabel":"Epoch",
-                    "ylabel":k,
+                    "title":f"{md.name} {k}\n{desc}",
+                    "x_label":"Epoch",
                     "y_labels":[f"{k} loss", "learning rate"],
-                    "y_ranges":[(0.,1.),(1e-5,0.1)],
+                    "y_ranges":[
+                        {"mae":(0., .2), "mae-swm-7":(0., .2),
+                            "mae-swm-28":(0., .2), "mae-swm-100":(0., .2),
+                            "mae-swm-289":(0., .2) }.get(k, (0., 1.)),
+                        (1e-5, 0.1)
+                        ],
                     "y_scales":["linear", "log"],
                     "linestyle":["-","-","-.","-.","-"],
                     "line_labels":["train mean", "val mean",
@@ -83,24 +89,23 @@ if __name__=="__main__":
                 )
         print(f"Generated {fig_path.name}")
 
-    loss_bounds,loss_bins = (0,1),64
     lc_all = pkl.load(md.dir.joinpath(f"{md.name}_metrics_all.pkl").open("rb"))
     ## add one to bins so that they span the min/max values of each
-    loss_bin_bounds = np.linspace(*loss_bounds, loss_bins+1)
-    loss_bin_centers = loss_bin_bounds[:-1] + 1/(loss_bins*2)
+    loss_bin_bounds = np.linspace(*hm_loss_bounds, hm_loss_bins+1)
+    loss_bin_centers = loss_bin_bounds[:-1] + 1/(hm_loss_bins*2)
     hm_train,hm_val = None,None
     for k in lc_all["train"].keys():
         if hm_train is None:
             n_epochs = len(lc_all["train"][k])
-            hm_train = np.full((loss_bins, n_epochs), 0.)
-            hm_val = np.full((loss_bins, n_epochs), 0.)
+            hm_train = np.full((hm_loss_bins, n_epochs), 0.)
+            hm_val = np.full((hm_loss_bins, n_epochs), 0.)
 
-        tix = np.asarray(lc_all["train"][k]) - loss_bounds[0] \
-                / (loss_bounds[1] - loss_bounds[0])
-        vix = np.asarray(lc_all["val"][k]) - loss_bounds[0] \
-                / (loss_bounds[1] - loss_bounds[0])
-        tix = np.floor(np.clip(tix*loss_bins, 0, loss_bins-1)).astype(int)
-        vix = np.floor(np.clip(vix*loss_bins, 0, loss_bins-1)).astype(int)
+        tix = np.asarray(lc_all["train"][k]) - hm_loss_bounds[0] \
+                / (hm_loss_bounds[1] - hm_loss_bounds[0])
+        vix = np.asarray(lc_all["val"][k]) - hm_loss_bounds[0] \
+                / (hm_loss_bounds[1] - hm_loss_bounds[0])
+        tix = np.floor(np.clip(tix*hm_loss_bins,0,hm_loss_bins-1)).astype(int)
+        vix = np.floor(np.clip(vix*hm_loss_bins,0,hm_loss_bins-1)).astype(int)
 
         for eix in range(tix.shape[0]):
             for bix in range(tix.shape[1]):
@@ -113,7 +118,8 @@ if __name__=="__main__":
                 vdomain=loss_bin_centers,
                 hlines=[lr],
                 plot_spec={
-                    "title":f"Training {k} counts, learning rate ({md.name})",
+                    "title":f"Training {k} counts, learning rate " + \
+                            f"({md.name})\n{desc}",
                     "hl_xlabel":"Epoch",
                     "hm_ylabel":f"Training {k}",
                     "hl_ylabel":f"Learning Rate",
@@ -131,7 +137,7 @@ if __name__=="__main__":
                 vdomain=loss_bin_centers,
                 hlines=[lr],
                 plot_spec={
-                    "title":f"Count diff train-val {k} ({md.name})",
+                    "title":f"Count diff train-val {k} ({md.name})\n{desc}",
                     "hl_xlabel":"Epoch",
                     "hm_ylabel":f"Training {k}",
                     "hl_ylabel":f"Learning Rate",
@@ -216,7 +222,7 @@ if __name__=="__main__":
     '''
 
     ## plot a subset of samples retained by the model during training.
-    '''
+    #'''
     inputs,outputs= np_collate_fn(pkl.load(
             md.dir.joinpath(f"{model_name}_samples.pkl").open("rb"),
             #map_location=torch.device("cpu"),
@@ -248,7 +254,7 @@ if __name__=="__main__":
         plot_lines(
             domain=domains, ylines=ylines, labels=labels, multi_domain=True,
             plot_spec={"colors":colors, "xtick_rotation":45, "zero_axis":True,
-                "title":" ".join(name_fields), },
+                "title":" ".join(name_fields)+f"\n{desc}", },
             fig_path=fig_path,
             )
         print(f"Generated {fig_path.name}")
@@ -270,7 +276,7 @@ if __name__=="__main__":
         plot_lines(
             domain=domains, ylines=ylines, labels=labels, multi_domain=True,
             plot_spec={"colors":colors, "xtick_rotation":45, "zero_axis":True,
-                "title":" ".join(name_fields), },
+                "title":" ".join(name_fields)+f"\n{desc}", },
             fig_path=fig_path,
             )
         print(f"Generated {fig_path.name}")
@@ -296,15 +302,15 @@ if __name__=="__main__":
             domain=domains, ylines=ylines, labels=labels, multi_domain=True,
             plot_spec={"colors":colors, "linestyle":linestyle,
                 "xtick_rotation":45, "zero_axis":True,
-                "title":" ".join(name_fields) },
+                "title":" ".join(name_fields)+f"\n{desc}" },
             fig_path=fig_path,
             )
         print(f"Generated {fig_path.name}")
 
-    '''
+    #'''
 
     ## load+plot training and validation sample source evaluators
-    '''
+    #'''
     ss_evs = [
         Evaluator.from_pkl(md.dir.joinpath(p)) for p in [
             f"{md.name}_sample-sources_train.pkl",
@@ -333,7 +339,7 @@ if __name__=="__main__":
         plot_heatmap(
             heatmap=np.where(doys_bixs==0,np.nan,doys_bixs),
             plot_spec={
-                "title":f"Sample DoY vs Batch ({ev.meta['name']})",
+                "title":f"Sample DoY vs Batch ({ev.meta['name']})\n{desc}",
                 "cmap":"turbo",
                 "xlabel":"Sample initialization DoY",
                 "ylabel":"Batch number",
@@ -348,7 +354,7 @@ if __name__=="__main__":
             latitude=lat,
             longitude=lon,
             plot_spec={
-                "title":f"Spatial Sample Counts ({ev.meta['name']})",
+                "title":f"Spatial Sample Counts ({ev.meta['name']})\n{desc}",
                 "cmap":"gnuplot",
                 "cbar_label":"Number of samples",
                 "cbar_orient":"horizontal",
@@ -366,7 +372,7 @@ if __name__=="__main__":
             latitude=lat,
             longitude=lon,
             plot_spec={
-                "title":f"Most Recent Sample Batch ({ev.meta['name']})",
+                "title":f"Latest Sample Batch ({ev.meta['name']})\n{desc}",
                 "cmap":"gist_rainbow",
                 "cbar_label":"Sample batch",
                 "cbar_orient":"horizontal",
@@ -378,5 +384,5 @@ if __name__=="__main__":
             fig_path=fig_path,
             )
         print(f"Generated {fig_path.name}")
-    '''
+    #'''
 

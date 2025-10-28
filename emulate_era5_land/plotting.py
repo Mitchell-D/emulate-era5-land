@@ -699,9 +699,11 @@ def plot_lines_multiy(domain, ylines, plot_spec={},
             ax.set_ylim(y_ranges[i])
 
     host.grid(ps.get("grid", False), **ps.get("grid_kwargs", {}))
-    host.set_xlabel(ps.get("x_label", "Time"),
+    host.set_xlabel(ps.get("xlabel", "Time"),
             fontsize=ps.get("label_fontsize"))
-    host.xaxis.set_major_formatter(mdates.DateFormatter(ps.get("date_format")))
+    if isinstance(domain[0], datetime):
+        host.xaxis.set_major_formatter(
+                mdates.DateFormatter(ps.get("date_format")))
     host.tick_params(axis="x", rotation=ps.get("xtick_rotation"))
     host.legend(
             handles=[l[0] for l in lines],

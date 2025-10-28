@@ -102,9 +102,9 @@ config = {
         "type":"acclstm",
         "args":{
             "static_int_encoding_size":6,
-            "num_hidden_feats":128,
-            "num_hidden_layers":6,
-            "lstm_kwargs":{"dropout":.2},
+            "num_hidden_feats":64,
+            "num_hidden_layers":3,
+            "lstm_kwargs":{},
             "normalized_inputs":True,
             "normalized_outputs":True,
             "cycle_targets":[
@@ -126,7 +126,7 @@ config = {
             "step_size_up":3,
             "step_size_down":9,
             "mode":"exp_range",
-            "gamma":1.0,
+            "gamma":.9,
             },
         "initial_lr":1e-3,
         "early_stop_patience":30.,
@@ -136,8 +136,8 @@ config = {
         "val_frequency":1,
         },
     "seed":200007221750,
-    "name":"acclstm-era5-swm-45",
-    "notes":"var 33; No LR diminishment",
+    "name":"acclstm-era5-swm-57",
+    "notes":"var 50; Theoretically identical",
     }
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
