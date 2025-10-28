@@ -92,7 +92,7 @@ config = {
     "metrics":{
             "mse":("mse", {"reduction":"mean"}),
             "mae":("mae", {"reduction":"mean"}),
-            "fwmae":("fwmae", {"feature_weights":[8,4,2,1]}),
+            "fwmae":("fwmae", {"feature_weights":[16,6,2,1]}),
             "mae-swm-7":("fwmae", {"feature_weights":[1,0,0,0]}),
             "mae-swm-28":("fwmae", {"feature_weights":[0,1,0,0]}),
             "mae-swm-100":("fwmae", {"feature_weights":[0,0,1,0]}),
@@ -119,16 +119,39 @@ config = {
         "loss_metric":"fwmae",
         "optimizer_type":"nadam",
         "optimizer_args":{},
+
+        #"schedule_type":"exponential",
+        #"schedule_args":{
+        #    "gamma":.95
+        #    },
+        #"initial_lr":5e-3,
+
+        #"schedule_type":"polynomial",
+        #"schedule_args":{
+        #    "total_iters":32,
+        #    "power":2,
+        #    },
+        #"initial_lr":5e-3,
+
+        #"schedule_type":"coswarmrestart",
+        #"schedule_args":{
+        #    "T_0":12,
+        #    "T_mult":1,
+        #    "eta_min":5e-4,
+        #    },
+        #"initial_lr":5e-3,
+
         "schedule_type":"cyclic",
         "schedule_args":{
             "base_lr":5e-4,
-            "max_lr":5e-3,
-            "step_size_up":3,
-            "step_size_down":9,
+            "max_lr":1e-1,
+            "step_size_up":2,
+            "step_size_down":10,
             "mode":"exp_range",
             "gamma":.9,
             },
         "initial_lr":1e-3,
+
         "early_stop_patience":30.,
         "early_stop_delta":0.,
         "max_epochs":2048,
@@ -136,8 +159,8 @@ config = {
         "val_frequency":1,
         },
     "seed":200007221750,
-    "name":"acclstm-era5-swm-57",
-    "notes":"var 50; Theoretically identical",
+    "name":"acclstm-era5-swm-62",
+    "notes":"var 50; much higher peaks in learning rate",
     }
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')

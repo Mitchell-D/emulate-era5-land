@@ -1,0 +1,498 @@
+{
+  "feats": {
+    "window_feats": [
+      "pres",
+      "tmp",
+      "dwpt",
+      "apcp",
+      "alb",
+      "dlwrf",
+      "dswrf",
+      "wm-snow",
+      "ugrd",
+      "vgrd",
+      "lai-low",
+      "lai-high",
+      "swm-7",
+      "swm-28",
+      "swm-100",
+      "swm-289"
+    ],
+    "horizon_feats": [
+      "pres",
+      "tmp",
+      "dwpt",
+      "apcp",
+      "alb",
+      "dlwrf",
+      "dswrf",
+      "wm-snow",
+      "ugrd",
+      "vgrd",
+      "lai-low",
+      "lai-high"
+    ],
+    "target_feats": [
+      "diff swm-7",
+      "diff swm-28",
+      "diff swm-100",
+      "diff swm-289"
+    ],
+    "static_feats": [
+      "geopot",
+      "lakec",
+      "vc-high",
+      "vc-low"
+    ],
+    "static_int_feats": [
+      "soilt",
+      "vt-high",
+      "vt-low"
+    ],
+    "aux_dynamic_feats": [
+      "evp",
+      "lhtfl"
+    ],
+    "aux_static_feats": [
+      "vidxs",
+      "hidxs"
+    ],
+    "derived_feats": {
+      "windmag": [
+        [
+          "ugrd",
+          "vgrd"
+        ],
+        [],
+        "lambda d,s:(d[0]**2+d[1]**2)**(1/2)"
+      ],
+      "swm-fc": [
+        [
+          "swm-7",
+          "swm-28",
+          "swm-100",
+          "swm-289"
+        ],
+        [],
+        "lambda d,s:d[0]+d[1]+d[2]+d[3]"
+      ]
+    },
+    "static_embed_maps": {
+      "soilt": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "vt-low": [
+        0,
+        1,
+        2,
+        7,
+        9,
+        10,
+        11,
+        13,
+        16,
+        17
+      ],
+      "vt-high": [
+        0,
+        3,
+        5,
+        6,
+        18,
+        19
+      ]
+    },
+    "window_size": 48,
+    "horizon_size": 120,
+    "norm_coeffs": {
+      "diff swm-7": [
+        0.0,
+        0.00433
+      ],
+      "diff swm-28": [
+        0.0,
+        0.00149
+      ],
+      "diff swm-100": [
+        0.0,
+        0.00048
+      ],
+      "diff swm-289": [
+        0.0,
+        0.00021
+      ],
+      "swm-7": [
+        0.262,
+        0.128
+      ],
+      "swm-28": [
+        0.278,
+        0.104
+      ],
+      "swm-100": [
+        0.272,
+        0.0996
+      ],
+      "swm-289": [
+        0.287,
+        0.1063
+      ],
+      "diff tsoil-7": [
+        0.0,
+        1.1805
+      ],
+      "diff tsoil-28": [
+        0.0,
+        0.1761
+      ],
+      "diff tsoil-100": [
+        0.0,
+        0.01038
+      ],
+      "diff tsoil-289": [
+        0.0,
+        0.00365
+      ],
+      "tsoil-7": [
+        287.1,
+        11.43
+      ],
+      "tsoil-28": [
+        286.96,
+        10.13
+      ],
+      "tsoil-100": [
+        286.85,
+        8.872
+      ],
+      "tsoil-289": [
+        286.726,
+        7.543
+      ],
+      "lai-low": [
+        1.18,
+        0.93
+      ],
+      "lai-high": [
+        1.97,
+        1.67
+      ],
+      "pres": [
+        92722.5,
+        7427.8
+      ],
+      "wm-snow": [
+        0.01442,
+        0.0601
+      ],
+      "ugrd": [
+        0.449,
+        2.206
+      ],
+      "vgrd": [
+        0.3696,
+        2.4253
+      ],
+      "tmp": [
+        285.138,
+        12.211
+      ],
+      "dwpt": [
+        276.51,
+        11.04
+      ],
+      "apcp": [
+        0.08998,
+        0.4223
+      ],
+      "dlwrf": [
+        305.46,
+        63.362
+      ],
+      "dswrf": [
+        195.78,
+        277.07
+      ],
+      "alb": [
+        0.21,
+        0.122
+      ],
+      "evp": [
+        -0.0678,
+        0.1127
+      ],
+      "pevap": [
+        -0.4178,
+        0.6423
+      ],
+      "shtfl": [
+        -34.7112,
+        100.747
+      ],
+      "lhtfl": [
+        -47.273,
+        78.277
+      ],
+      "swnet": [
+        158.147,
+        227.228
+      ],
+      "lwnet": [
+        -74.705,
+        46.399
+      ],
+      "tskin": [
+        0.0,
+        1.0
+      ],
+      "wm-skin": [
+        0.0,
+        1.0
+      ],
+      "roff-all": [
+        0.0,
+        1.0
+      ],
+      "evp-snow": [
+        0.0,
+        1.0
+      ],
+      "evp-trsp": [
+        0.0,
+        1.0
+      ],
+      "evp-bare": [
+        0.0,
+        1.0
+      ],
+      "evp-cnpy": [
+        0.0,
+        1.0
+      ],
+      "roff-bg": [
+        0.0,
+        1.0
+      ],
+      "roff-sf": [
+        0.0,
+        1.0
+      ],
+      "lat": [
+        0.0,
+        1.0
+      ],
+      "lon": [
+        0.0,
+        1.0
+      ],
+      "soilt": [
+        0.0,
+        1.0
+      ],
+      "vt-low": [
+        0.0,
+        1.0
+      ],
+      "vt-high": [
+        0.0,
+        1.0
+      ],
+      "vc-high": [
+        0.445,
+        0.444
+      ],
+      "vc-low": [
+        0.5405,
+        0.4423
+      ],
+      "geopot": [
+        7794.6,
+        6870.0
+      ],
+      "laked": [
+        0.0,
+        1.0
+      ],
+      "lakec": [
+        0.0119,
+        0.026
+      ],
+      "glacmask": [
+        0.0,
+        1.0
+      ],
+      "landmask": [
+        0.0,
+        1.0
+      ]
+    }
+  },
+  "data": {
+    "train": {
+      "timegrids": [
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2012.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2013.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2014.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2015.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2016.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2017.h5"
+      ],
+      "shuffle": true,
+      "sample_cutoff": 0.66,
+      "sample_across_files": true,
+      "sample_under_cutoff": true,
+      "sample_separation": 409,
+      "random_offset": true,
+      "chunk_pool_count": 48,
+      "buf_size_mb": 4096,
+      "buf_slots": 48,
+      "buf_policy": 0,
+      "batch_size": 64,
+      "num_workers": 6,
+      "prefetch_factor": 6,
+      "out_dtype": "f4"
+    },
+    "val": {
+      "timegrids": [
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2012.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2013.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2014.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2015.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2016.h5",
+        "/rhome/mdodson/emulate-era5-land/data/timegrids/timegrid_era5_2017.h5"
+      ],
+      "shuffle": true,
+      "sample_cutoff": 0.66,
+      "sample_across_files": true,
+      "sample_under_cutoff": false,
+      "sample_separation": 409,
+      "random_offset": true,
+      "chunk_pool_count": 48,
+      "buf_size_mb": 4096,
+      "buf_slots": 48,
+      "buf_policy": 0,
+      "batch_size": 64,
+      "num_workers": 6,
+      "prefetch_factor": 6,
+      "out_dtype": "f4"
+    }
+  },
+  "metrics": {
+    "mse": [
+      "mse",
+      {
+        "reduction": "mean"
+      }
+    ],
+    "mae": [
+      "mae",
+      {
+        "reduction": "mean"
+      }
+    ],
+    "fwmae": [
+      "fwmae",
+      {
+        "feature_weights": [
+          8,
+          4,
+          2,
+          1
+        ]
+      }
+    ],
+    "mae-swm-7": [
+      "fwmae",
+      {
+        "feature_weights": [
+          1,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "mae-swm-28": [
+      "fwmae",
+      {
+        "feature_weights": [
+          0,
+          1,
+          0,
+          0
+        ]
+      }
+    ],
+    "mae-swm-100": [
+      "fwmae",
+      {
+        "feature_weights": [
+          0,
+          0,
+          1,
+          0
+        ]
+      }
+    ],
+    "mae-swm-289": [
+      "fwmae",
+      {
+        "feature_weights": [
+          0,
+          0,
+          0,
+          1
+        ]
+      }
+    ]
+  },
+  "model": {
+    "type": "acclstm",
+    "args": {
+      "static_int_encoding_size": 6,
+      "num_hidden_feats": 64,
+      "num_hidden_layers": 3,
+      "lstm_kwargs": {},
+      "normalized_inputs": true,
+      "normalized_outputs": true,
+      "cycle_targets": [
+        "diff swm-7",
+        "diff swm-28",
+        "diff swm-100",
+        "diff swm-289"
+      ],
+      "teacher_forcing": true,
+      "sample_retain_frequency": 8
+    }
+  },
+  "setup": {
+    "loss_metric": "fwmae",
+    "optimizer_type": "nadam",
+    "optimizer_args": {},
+    "schedule_type": "cyclic",
+    "schedule_args": {
+      "base_lr": 0.0005,
+      "max_lr": 0.005,
+      "step_size_up": 3,
+      "step_size_down": 9,
+      "mode": "exp_range",
+      "gamma": 0.9
+    },
+    "initial_lr": 0.001,
+    "early_stop_patience": 30.0,
+    "early_stop_delta": 0.0,
+    "max_epochs": 2048,
+    "batches_per_epoch": 64,
+    "val_frequency": 1
+  },
+  "seed": 200007221750,
+  "name": "acclstm-era5-swm-64",
+  "notes": "var 50; using teacher forcing"
+}

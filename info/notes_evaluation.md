@@ -1,6 +1,16 @@
 # evaluation
 
-##
+## evaluator plans
+
+ - Collect time and location of samples that evaluate to True given
+   an arbitrary expression.
+
+ - Joint histograms with arbitrary number of axes/bounds/resolutions
+
+ - Marginalize over arbitrary subset of axes using one or more
+   reduce functions
+
+## figuring out evaluator transition
 
 #### testbed/eval\_sequences.py
 
