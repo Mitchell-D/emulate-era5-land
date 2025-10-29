@@ -1,14 +1,35 @@
 # evaluation
 
-## evaluator plans
+## new Evaluator subclasses
 
- - Collect time and location of samples that evaluate to True given
-   an arbitrary expression.
+**EvalSampleSources** (complete)
 
- - Joint histograms with arbitrary number of axes/bounds/resolutions
+Keep track of when and where samples are drawn from by recording the
+time and pixel indeces.
 
- - Marginalize over arbitrary subset of axes using one or more
-   reduce functions
+**EvalTemporal** (complete)
+
+Store the average and standard deviation of arbitrary feaftures with
+respect to time of day and day of year.
+
+**EvalJointHist**
+
+Develop a joint histogram(s) with an arbitrary number of axes
+having individual bounds and resolutions. Optionally provide one
+or more conditions that must evaluate to True per sample in order
+for inclusion in the corresponding hist. As such, a separate hist
+will be developed for each condition.
+
+**EvalAxes**
+
+Marginalize over arbitrary subset of axes using one or more reduce
+functions
+
+**EvalConditional**
+
+Collect time and location of samples that evaluate to True given an
+arbitrary expression, and optionally reduced feature values.
+
 
 ## figuring out evaluator transition
 

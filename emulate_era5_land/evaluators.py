@@ -181,6 +181,130 @@ class Evaluator(ABC):
             f"{batch_dict[dataset].shape = } ; {len(self._f[dataset]) = }"
         return batch_dict[dataset][...,self._f[dataset].index(feat)]
 
+class EvalJointHist(Evaluator):
+    """
+    Develop a joint histogram(s) with an arbitrary number of axes having
+    individual bounds and resolutions.
+
+    Optionally provide one or more conditions that must evaluate to True per
+    sample in order for inclusion in the corresponding hist.
+
+    Also optionally provide one or more covariate features for which the mean
+    (standard deviation?) are tracked individually for each histogram bin.
+
+    Required parameters in `params` dict:
+
+    :@param axis_feats: List of 2-tuples of strings (dataset, feat) indicating
+        the data and order of each histogram axis. The datasets referenced by
+        axis_feats must have the same shape.
+    :@param axis_params: List of 3-tuples (min, max, resolution) corresponding
+        to each of the histogram axes. Resolution must be an integer.
+    :@param cov_feats: Optional list of 2-tuples of strings (dataset, feat)
+        indicating the data and order of features to capture means and
+        standard deviations for as covariates for each bin in of each
+        histogram. The covariate feats must also have the same shape as the
+        axis features so that there is a 1:1 correspondence between values.
+        Default to None.
+    :@param hist_conditions: Optional list of 2-tuples like (inputs, funcstr)
+        where `inputs` is a list of 2-tuples (dataset, feat) indicating
+        positional arguments to string-encoded lambda expression `funcstr`.
+        Given the arguments, the expression should either return a 1d boolean
+        array along the 1st (batch) axis, or a boolean array matching the
+        shape of the axis and covariate features (excluding the feat axis).
+        Default to None.
+    :@param round_oob: If True, values that are out of bounds will be rounded
+        to the nearest valid bin rather than discarded.
+    """
+    #_required = ["vidx_feat", "hidx_feat", "time_feat", "cov_feats",
+    #        "cov_reduce_metric", "cov_reduce_axes"]
+    _required = ["axis_feats", "axis_params", "cov_feats", "hist_conditions",
+            "round_oob"]
+    def __init__(self, params:dict, feats:dict,
+            results:dict=None, meta:dict={}):
+        """ See superclass initializer. """
+        super(EvalSampleSources, self).__init__(
+                "EvalSampleSources",
+                params=params,
+                feats=feats,
+                results=results,
+                meta=meta,
+                )
+
+    def _validate_params(self):
+        """ Verify that the required parameters exist for this eval type """
+        ## set defaults for arguments that aren't really required
+        if "cov_feats" not in self._p.keys():
+            self._p["cov_feats"] = None
+        if "hist_conditions" not in self._p.keys():
+            self._p["hist_conditions"] = None
+        if "round_oob" not in self._p.keys():
+            self._p["round_oob"] = True
+        self._do_cf = not self._p["cov_feats"] is None
+        self._do_hc = not self._p["hist_conditions"] is None
+
+        ## Make sure all the features are valid in the label dic
+        for dk,fk in self._p["axis_feats"]:
+            assert dk in self._f.keys(), f"{dk} not in {list(self._f.keys())}"
+            assert fk in self._f[dk], f"{fk} not in dataset {dk} {self._f[dk]}"
+
+        self._hcoords = [] ## spanning coordinates of bins
+        self._hdiffs = [] ## coordinate 'width' of each bin
+        for i,(v0,vf,res) in enumerate(self._p["axis_params"]):
+            assert v0<vf, "Lower bound {v0=} must be less than {vf=} for " + \
+                    f"{self._p['axis_feats'][i]}"
+            assert isinstance(res,int), f"{res=} must be an integer for " + \
+                    f"{self._p['axis_feats'][i]}"
+            self._hcoords.append(np.linspace(v0, vf, res+1))
+            self._hdiffs.append((vf-v0)/res)
+
+        ## validate covariate features
+        if self._do_cf:
+            for dk,fk in self._p["cov_feats"]:
+                assert dk in self._f.keys(), \
+                        f"{dk} not in {list(self._f.keys())}"
+                assert fk in self._f[dk], \
+                        f"{fk} not in dataset {dk} {self._f[dk]}"
+
+        ## validate hist conditions and prepare the function objects
+        self._hcs = []
+        if self._do_hc:
+            for args,func in self._p["hist_conditions"]:
+                for dk,fk in args:
+                    assert dk in self._f.keys(), \
+                        f"{dk} not in {list(self._f.keys())}"
+                    assert fk in self._f[dk], \
+                        f"{fk} not in dataset {dk} {self._f[dk]}"
+                self._hcs.append(args,eval(func))
+
+        assert isinstance(self._p["round_oob"], bool)
+
+    def add_batch(self, bdict:dict):
+        """
+        Update the partial evaluation data with a new batch of samples
+
+        1. If histogram arrays are not declared, create them.
+        2. Extract data needed for and evaluate hist conditions, or else
+           declare a uniformly True array of the appropriate shape.
+        3. If not all condition bool arrays are uniformly False, extract the
+           requested features for axis and covariate data.
+        4. For each condition bool array...
+           a. If 1d along sample axis, repeat along all other axes.
+           b. If not rounding OOB values, "or" together boolean masks of out
+              of bounds values along each axis, and negate them from the
+              condition bool array.
+           c. Apply the boolean array so all axis and covariate arrays in the
+              batch are 1d and of identical size.
+           d. Rescale the axis arrays into histogram indeces.
+           e. Given the histogram arrays for this conditional bool array,
+              ccumulate the sum of counts per each indexed bin as well as the
+              sum of covariate values within each bin.
+        """
+        pass
+
+    def final_results(self):
+        """ """
+        pass
+
 class EvalSampleSources(Evaluator):
     """
     Keep track of when/where batch samples are drawn from
