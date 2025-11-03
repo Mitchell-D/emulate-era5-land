@@ -4,6 +4,7 @@ Plotting methods for visualizing training processes, including:
     1. individual sequence samples retained by the model
     2. spatiotemporal distribution of t/v samples
     3. learning rate plotted against training and validation metrics
+    4. Histograms of loss along each feature.
 """
 #import torch
 import numpy as np
@@ -21,6 +22,47 @@ from emulate_era5_land.ModelDir import ModelDir
 from emulate_era5_land.plotting import plot_heatmap,plot_lines,plot_geo_scalar
 from emulate_era5_land.plotting import plot_lines_multiy
 from emulate_era5_land.plotting import plot_lines_and_heatmap_split
+
+def plot_learning_batch_hists(fig_dir_path, model_dir, yfeat, xfeat,
+        hm_loss_bounds=(0,1), hm_loss_bins=256):
+    """
+    """
+    md = model_dir
+    desc = md.config["notes"]
+    lc_all = pkl.load(md.dir.joinpath(f"{md.name}_metrics_all.pkl").open("rb"))
+    ## add one to bins so that they span the min/max values of each
+    loss_bin_bounds = np.linspace(*hm_loss_bounds, hm_loss_bins+1)
+    loss_bin_centers = loss_bin_bounds[:-1] + 1/(hm_loss_bins*2)
+
+    for dataset in ["train", "val"]:
+        assert yfeat in lc_all[dataset].keys(), f"{md.name} {yfeat}"
+        assert xfeat in lc_all[dataset].keys(), f"{md.name} {yfeat}"
+        harray = np.full((hm_loss_bins, hm_loss_bins), 0)
+
+        v0,vf = hm_loss_bounds
+        x = hm_loss_bins * (np.asarray(lc_all[dataset][xfeat])-v0) / (vf-v0)
+        y = hm_loss_bins * (np.asarray(lc_all[dataset][yfeat])-v0) / (vf-v0)
+        x = np.floor(np.clip(x, 0, hm_loss_bins-1)).astype(int).ravel()
+        y = np.floor(np.clip(y, 0, hm_loss_bins-1)).astype(int).ravel()
+
+        for i in range(x.shape[0]):
+            harray[y[i],x[i]] += 1
+
+        fig_path = fig_dir_path.joinpath(
+                f"{md.name}_hist_{yfeat}_{xfeat}_{dataset}.png")
+        plot_heatmap(
+            heatmap=np.where(harray==0,np.nan,harray),
+            plot_spec={
+                "title":f"Error counts ({md.name}, {dataset})\n{desc}",
+                "cmap":"turbo",
+                "xlabel":f"{dataset} {xfeat}",
+                "ylabel":f"{dataset} {yfeat}",
+                #"x_ticks":loss_bin_centers,
+                #"y_ticks":loss_bin_centers,
+                },
+            fig_path=fig_path,
+            )
+        print(f"Generated {fig_path.name}")
 
 def plot_learning_curves(fig_dir_path, model_dir,
         hm_loss_bounds, hm_loss_bins):
@@ -85,21 +127,16 @@ def plot_learning_curves(fig_dir_path, model_dir,
     loss_bin_centers = loss_bin_bounds[:-1] + 1/(hm_loss_bins*2)
     hm_train,hm_val = None,None
     for k in lc_all["train"].keys():
-        if hm_train is None:
-            n_epochs = len(lc_all["train"][k])
-            hm_train = np.full((hm_loss_bins, n_epochs), 0.)
-            hm_val = np.full((hm_loss_bins, n_epochs), 0.)
+        n_epochs = len(lc_all["train"][k])
+        hm_train = np.full((hm_loss_bins, n_epochs), 0.)
+        hm_val = np.full((hm_loss_bins, n_epochs), 0.)
 
-        tix = np.asarray(lc_all["train"][k]) - hm_loss_bounds[0] \
-                / (hm_loss_bounds[1] - hm_loss_bounds[0])
-        vix = np.asarray(lc_all["val"][k]) - hm_loss_bounds[0] \
-                / (hm_loss_bounds[1] - hm_loss_bounds[0])
-        tmpt = np.clip(tix*hm_loss_bins,0,hm_loss_bins-1)
-        print(tmpt)
-        tmpt = np.floor(tmpt)
-        print(tmpt)
-        tix = tmpt.astype(int)
-        vix = np.floor(np.clip(vix*hm_loss_bins,0,hm_loss_bins-1)).astype(int)
+        hm0,hmf = hm_loss_bounds
+        nbins = hm_loss_bins
+        tix = np.clip((np.asarray(lc_all["train"][k])-hm0) / (hmf-hm0), 0, 1)
+        vix = np.clip((np.asarray(lc_all["val"][k])-hm0) / (hmf-hm0), 0, 1)
+        tix = np.floor(np.clip(tix*nbins, 0, nbins-1)).astype(int)
+        vix = np.floor(np.clip(vix*nbins, 0, nbins-1)).astype(int)
 
         for eix in range(tix.shape[0]):
             for bix in range(tix.shape[1]):
@@ -355,9 +392,13 @@ if __name__=="__main__":
     model_parent_dir = proj_root.joinpath("data/models")
     static_pkl_path = proj_root.joinpath("data/static/era5_static.pkl")
     fig_dir_path = proj_root.joinpath("figures/training")
-    #model_names = [f"acclstm-era5-swm-{mn}" for mn in range(63,66)
-    #        if mn not in [46]]
-    model_names = ["acclstm-era5-swm-62"]
+    ##
+    model_names = [
+            f"acclstm-era5-swm-{mn}" for mn in range(37,66)
+            if mn not in [46, 42, 43] ## don't have layer-wise error
+            ]
+    #model_names = ["acclstm-era5-swm-64", "acclstm-era5-swm-50"]
+    #model_names = ["acclstm-era5-swm-50"]
 
     for model_name in model_names:
         print(f"Plotting {model_name}")
@@ -369,13 +410,20 @@ if __name__=="__main__":
         if not fd.exists():
             fd.mkdir()
 
+        bh_args = [("mae-swm-7","mae-swm-28"), ("mae-swm-100","mae-swm-289")]
+        for yf,xf in bh_args:
+            plot_learning_batch_hists(
+                    fig_dir_path=fd, model_dir=md, yfeat=yf, xfeat=xf,
+                    hm_loss_bounds=(0,.15), hm_loss_bins=256)
+
         plot_learning_curves(
                 fig_dir_path=fd,
                 model_dir=md,
-                hm_loss_bounds=(0,1),
-                hm_loss_bins=128,
+                hm_loss_bounds=(0,.15),
+                hm_loss_bins=256,
                 )
 
+        '''
         plot_samples(
                 fig_dir_path=fd,
                 model_dir=md,
@@ -387,3 +435,4 @@ if __name__=="__main__":
                 model_dir=md,
                 grid_domain_shape=(261,586),
                 )
+        '''

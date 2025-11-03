@@ -299,7 +299,10 @@ class EvalJointHist(Evaluator):
               ccumulate the sum of counts per each indexed bin as well as the
               sum of covariate values within each bin.
         """
-        pass
+        if self._r is None:
+            self._r = {
+                ""
+                }
 
     def final_results(self):
         """ """

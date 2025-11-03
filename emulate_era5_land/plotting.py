@@ -325,9 +325,11 @@ def plot_heatmap(heatmap:np.ndarray, fig_path:Path=None, show=False,
     ax.set_xlabel(plot_spec.get("xlabel"))
     ax.set_ylabel(plot_spec.get("ylabel"))
     if not plot_spec.get("x_ticks") is None:
-        ax.set_xticks(plot_spec.get("x_ticks"))
+        ax.set_xticks(np.arange(plot_spec.get("x_ticks").size))
+        ax.set_xticklabels(plot_spec.get("x_ticks"))
     if not plot_spec.get("y_ticks") is None:
-        ax.set_yticks(plot_spec.get("y_ticks"))
+        ax.set_yticks(np.arange(plot_spec.get("y_ticks").size))
+        ax.set_yticklabels(plot_spec.get("y_ticks"))
     if show:
         plt.show()
     if not fig_path is None:

@@ -12,7 +12,7 @@
 #SBATCH -t 3-00:00
 
 ### memory (MB per CPU)
-#SBATCH --mem-per-cpu=6G
+#SBATCH --mem-per-cpu=32G
 
 ### Mail to user on job done and fail
 #SBATCH --mail-type=END,FAIL
@@ -34,9 +34,9 @@ cd /rhome/mdodson/emulate-era5-land
 
 set runcmd = /rhome/mdodson/.micromamba/envs/learn-torch/bin/python
 
-#${runcmd} -u scripts/eval_gridstats.py
+${runcmd} -u scripts/eval_gridstats.py
 #${runcmd} -u scripts/test_series_alignment.py
 #${runcmd} -u scripts/plot_static.py
 #${runcmd} -u scripts/test_generators.py
 #${runcmd} -u scripts/plot_samples.py
-${runcmd} -u scripts/plot_training.py
+#${runcmd} -u scripts/plot_training.py

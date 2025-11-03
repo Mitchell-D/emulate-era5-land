@@ -20,15 +20,18 @@ if __name__=="__main__":
     gen_loc_path = proj_root.joinpath("data/test-gen/test-gen_10.pkl")
     gen_stats_path = proj_root.joinpath("data/test-gen/test-gen_stats_10.pkl")
     gen_span_path = proj_root.joinpath("data/test-gen/test-gen_span_10.pkl")
-    span_plot_labels = ["tmp", "dswrf", "swm-7", "diff swm-7", "diff swm-28"]
+    span_plot_labels = [
+            #"tmp", "dswrf", "swm-7", "diff swm-7", "diff swm-28"
+            "swm-7", "diff swm-7", "windmag", "evp-trsp",
+            ]
     max_plotted_samples = 12
 
     ## Run the generator and store the time/location of its outputs
-    #'''
+    '''
     calculate_stats = True
-    batches_per_stat = 16
-    collect_sample_locations = True
-    collect_spanning_samples = True
+    batches_per_stat = 64
+    collect_sample_locations = True ## store time/space location of samples
+    collect_spanning_samples = True ## save some samples crossing timegrids
     max_batches = 1024
     ## perilously assume sorting path strings will return files chronologically
     tgs = sorted([
@@ -51,24 +54,24 @@ if __name__=="__main__":
                 #"evp-snow", "evp-trsp", "evp-bare", "evp-cnpy",
                 #"roff-bg", "roff-sf",
                 #"tskin", "wm-skin", "wm-snow",
-                "tmp", "dswrf", "swm-7", "diff swm-7", "swm-28",
+                "wm-skin", "tskin",
+                "windmag", "evp-cnpy","roff-bg","roff-sf",
+                "evp-snow", "evp-trsp", "evp-bare", "evp-cnpy",
+                "swm-7"
                 ],
             horizon_feats=[
                 #"lai-low", "lai-high", "alb", "weasd", "pres", "windmag",
                 #"tmp", "dwpt", "apcp", "dlwrf", "dswrf", "alb"
                 #"ugrd","vgrd","evp","pevap","shtfl","lhtfl","swnet","lwnet",
                 #"wm-skin","roff-all","evp-snow","evp-trsp","evp-bare",
-                #"evp-cnpy","roff-bg","roff-sf",
-                #"evp-snow", "evp-trsp", "evp-bare", "evp-cnpy",
+                "wm-skin", "tskin",
+                "windmag", "evp-cnpy","roff-bg","roff-sf",
+                "evp-snow", "evp-trsp", "evp-bare", "evp-cnpy",
+                "swm-7"
                 #"roff-bg", "roff-sf",
-                "tmp", "dswrf", "swm-7", "diff swm-7"
                 ],
             target_feats=[
-                #"diff swm-07", "diff swm-28", "diff swm-100", "diff swm-289",
-                #"diff tsoil-07", "diff tsoil-28",
-                #"diff tsoil-100", "diff tsoil-289",
-                #"diff tskin", "diff wm-skin", "diff wm-snow",
-                "diff swm-28"
+                "diff swm-7"
                 ],
             static_feats=["vc-high", "vc-low", "geopot", "lakec"],
             static_int_feats=["soilt", "vt-low", "vt-high"],
@@ -118,29 +121,6 @@ if __name__=="__main__":
         w,h,s,si,init = inputs
         y, = outputs
         aux_d,aux_s,t = auxiliary
-        tmp_months,tmp_days = map(np.asarray, zip(*[
-            (tmpt.month,tmpt.day)
-            for tmpt in map(datetime.fromtimestamp, t[:,0].numpy().astype(int))
-            ]))
-        if collect_spanning_samples:
-            m_span = (tmp_months == 12) & (tmp_days >= 26)
-            if not np.any(m_span):
-                continue
-            w = w[m_span]
-            h = h[m_span]
-            s = s[m_span]
-            init = init[m_span]
-            y = y[m_span]
-            aux_d = aux_d[m_span]
-            aux_s = aux_s[m_span]
-            t = t[m_span]
-            for j in range(w.shape[0]):
-                spanning_samples.append((
-                    (w[j],h[j],s[j],init[j]),
-                    (y[j],),
-                    (aux_d[j],aux_s[j],t[j])
-                    ))
-
         if collect_sample_locations:
             sample_locations.append((
                 aux_s[:,0].numpy().astype(np.uint16),
@@ -171,7 +151,34 @@ if __name__=="__main__":
                 stats_buffer = []
             else:
                 stats_buffer.append({"w":w,"h":h,"s":s,"y":y})
+
         print(f"Got sample: {[tuple(v.shape) for v in (w,h,y,s)]}")
+
+        if collect_spanning_samples:
+            tmp_months,tmp_days = map(np.asarray, zip(*[
+                (tmpt.month,tmpt.day)
+                for tmpt in map(
+                    datetime.fromtimestamp,
+                    list(t[:,0,0].numpy().astype(int)))
+                ]))
+            m_span = (tmp_months == 12) & (tmp_days >= 26)
+            if not np.any(m_span):
+                continue
+            w = w[m_span]
+            h = h[m_span]
+            s = s[m_span]
+            init = init[m_span]
+            y = y[m_span]
+            aux_d = aux_d[m_span]
+            aux_s = aux_s[m_span]
+            t = t[m_span]
+            for j in range(w.shape[0]):
+                spanning_samples.append((
+                    (w[j],h[j],s[j],init[j]),
+                    (y[j],),
+                    (aux_d[j],aux_s[j],t[j])
+                    ))
+            print(f"Extracted {w.shape[0]} spanning samples")
         if bix >= max_batches:
             break
 
@@ -184,7 +191,7 @@ if __name__=="__main__":
     if calculate_stats:
         pkl.dump((ds_train.signature, all_stats),
                 gen_stats_path.open("wb"))
-    #'''
+    '''
 
     ## Print out the stat metrics per feature / data catagory / batch group
     '''
@@ -316,6 +323,9 @@ if __name__=="__main__":
     print(f"Generated {fpath.as_posix()}")
     '''
 
+
+    ## Plot individual time series samples from gen_span_path
+    #'''
     sig,span_samples = pkl.load(gen_span_path.open("rb"))
     w_fixs,h_fixs,y_fixs = [],[],[]
     w_fl,h_fl,y_fl = [],[],[]
@@ -370,3 +380,4 @@ if __name__=="__main__":
                 show=False
                 )
         print(f"Generated {fpath.as_posix()}")
+    #'''

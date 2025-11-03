@@ -55,7 +55,7 @@ def plot_gridstats_spatial(gridstat_path, fig_dir:Path, plot_spec_per_feat={},
     latlon = F["/data/latlon"][...]
     valid_ixs = np.where(m_valid)
 
-    ## generate gridded
+    ## generate gridded wrt (month, tod, pixel, feat, metric)
     slices = sector_slices(
             #sector_shape=(None,None,16384,None,None),
             sector_shape=(None,None,sector_size,None,None),
@@ -123,7 +123,9 @@ if __name__=="__main__":
     data_dir = Path("/rstor/mdodson/era5")
     tg_dir = data_dir.joinpath("timegrids")
     gridstat_dir = data_dir.joinpath("gridstats")
-    fig_dir = Path("/rhome/mdodson/emulate-era5-land/figures/gridstats")
+    #fig_dir = Path("/rhome/mdodson/emulate-era5-land/figures/gridstats")
+    fig_dir = Path(
+            "/rhome/mdodson/emulate-era5-land/figures/gridstats-unbounded")
     era5_info = json.load(Path("data/list_feats_era5.json").open("r"))
     gs_path = gridstat_dir.joinpath("gridstats_era5_2012-2023.h5")
     gh_path = gridstat_dir.joinpath("gridhists_era5_2012-2023.h5")
@@ -168,6 +170,8 @@ if __name__=="__main__":
             )
     '''
 
+    #exit(0)
+
     ## grab the labels for the plotting method calls below
     with h5py.File(gs_path, "r") as F:
         dattrs = json.loads(F["data"].attrs["gridstats"])
@@ -183,10 +187,10 @@ if __name__=="__main__":
             gridstat_path=gs_path,
             fig_dir=fig_dir,
             plot_spec_per_feat={l:{
-                "vmin":[*[era5_info["hist-bounds"][l][0]]*3,None
-                    ] if l not in exclude_bounds else [None]*4,
-                "vmax":[*[era5_info["hist-bounds"][l][1]]*3,None
-                    ] if l not in exclude_bounds else [None]*4,
+                #"vmin":[*[era5_info["hist-bounds"][l][0]]*3,None
+                #    ] if l not in exclude_bounds else [None]*4,
+                #"vmax":[*[era5_info["hist-bounds"][l][1]]*3,None
+                #    ] if l not in exclude_bounds else [None]*4,
                 #"vmax":[era5_info["hist-bounds"][l][1]]*3+[None],
                 "title":era5_info["desc-mapping"][l],
                 "cbar_orient":"horizontal",
@@ -198,6 +202,8 @@ if __name__=="__main__":
             debug=True,
             )
     '''
+
+    #exit(0)
 
     hist_plot_specs = {
             "apcp":{"yscale":"log"},
@@ -227,7 +233,7 @@ if __name__=="__main__":
             }
     normalize = True
     ## plot the global histograms
-    '''
+    #'''
     with h5py.File(gh_path, "r") as F:
         for fk in F["/data/hists"].keys():
             tmp_coords = F[f"/data/hcoords/{fk}"][...]
@@ -260,7 +266,7 @@ if __name__=="__main__":
                     fig_path=fig_dir.joinpath(
                         f"gridhist_full_2012-2023_{fk}.png"),
                     )
-    '''
+    #'''
 
     ## plot the histograms stratified by static parameter
     #'''

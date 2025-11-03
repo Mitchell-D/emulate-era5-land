@@ -7,7 +7,8 @@ from multiprocessing import Pool
 import cartopy.crs as ccrs
 from pprint import pprint
 
-from era5_testbed.helpers import mp_get_permutation,mp_get_permutation_conv
+from emulate_era5_land.helpers import mp_get_permutation
+from emulate_era5_land.helpers import mp_get_permutation_conv
 
 config_labels = ["target_avg_dist", "roll_threshold", "threshold_diminish",
         "recycle_count", "seed", "dynamic_roll_threshold"]
@@ -298,14 +299,26 @@ if __name__=="__main__":
     proj_root_dir = Path("/rhome/mdodson/emulate-era5-land")
     pkl_dir = proj_root_dir.joinpath("data/permutations")
     fig_dir = proj_root_dir.joinpath("figures/permutations")
+
+    ## era5
+    '''
     slabels,sdata = pkl.load(Path("data/static/era5_static.pkl").open("rb"))
     m_valid_base = sdata[slabels.index("m_valid")].astype(bool)
     m_lakec =  sdata[slabels.index("lakec")] < .15
     m_land = sdata[slabels.index("landmask")] >= .8
     m_valid = m_valid_base & m_lakec & m_land
+    '''
+
+    ## nldas2
+    #'''
+    slabels,sdata = pkl.load(Path(
+        "data/static/nldas_static_cropped.pkl").open("rb"))
+    m_valid = sdata[slabels.index("m_valid")].astype(bool)
+    #'''
 
     workers = 20
-    enum_start = 219
+    enum_start = 0
+    dataset_name = "nldas2"
 
     latlon = np.stack([
         sdata[slabels.index("lat")][m_valid],
@@ -335,8 +348,10 @@ if __name__=="__main__":
             r_perm = np.asarray(tuple(zip(*sorted(zip(
                 list(perm), range(len(perm))
                 ), key=lambda v:v[0])))[1])
+            pkl_path = pkl_dir.joinpath(
+                    f"permutation_{dataset_name}_cycle_{i:03}.pkl")
             pkl.dump((a, np.stack([perm,r_perm], axis=-1), stats),
-                    pkl_dir.joinpath(f"permutation_{i:03}.pkl").open("wb"))
+                    pkl_path.open("wb"))
     '''
 
 
@@ -353,8 +368,10 @@ if __name__=="__main__":
             r_perm = np.asarray(tuple(zip(*sorted(zip(
                 list(perm), range(len(perm))
                 ), key=lambda v:v[0])))[1])
+            pkl_path = pkl_dir.joinpath(
+                f"permutation_{dataset_name}_conv_{i:03}.pkl")
             pkl.dump((a, np.stack([perm,r_perm], axis=-1), stats),
-                    pkl_dir.joinpath(f"permutation_{i:03}.pkl").open("wb"))
+                    pkl_path.open("wb"))
     '''
 
     ## generate single permutation with conv method
@@ -372,7 +389,7 @@ if __name__=="__main__":
     '''
 
 
-    #exit(0)
+    ##exit(0)
 
     ## Check how many chunks it would take to extract certain subgrids
     substrs = [
@@ -387,7 +404,7 @@ if __name__=="__main__":
             #"067",
             #"068",
             #f"{v:03}" for v in range(219,264),
-            "",
+            "nldas2",
             ]
 
     test_subgrids = {
@@ -406,7 +423,8 @@ if __name__=="__main__":
     #print(np.amin(latlon, axis=0), np.amax(latlon, axis=0))
     for pf in print_pkls:
         pnum = int(pf.stem.split("_")[-1])
-        mask = m_valid if pnum>=75 else m_valid_base
+        #mask = m_valid if pnum>=75 else m_valid_base ## for era5
+        mask = m_valid
         coords = np.stack([
             sdata[slabels.index("lat")][mask],
             sdata[slabels.index("lon")][mask],

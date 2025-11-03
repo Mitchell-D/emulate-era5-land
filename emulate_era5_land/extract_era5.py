@@ -1,6 +1,6 @@
 """
-Method to extract data from a continuous series of hourly NLDAS forcing and
-Noah model outputs as a 'timegrid' style hdf5 file, which serves as an
+Method to extract data from a continuous series of hourly ERA5 forcing and
+land model outputs as a 'timegrid' style hdf5 file, which serves as an
 intermediate data format facilitating efficient sampling and analysis.
 """
 import h5py
@@ -138,27 +138,38 @@ def extract_era5_year(file_dict, out_h5_path, static_labels, static_array,
     """
     ## generators expect args like (cur_month_file, prev_month_file)
     conversions = {
+            ## Originally J/m^2/hr ; J/m^2/hr * hr/sec -> W/m^2
             "sshf":lambda f:f/3600, ## convert to W/m^2
             "slhf":lambda f:f/3600,
             "ssrd":lambda f:f/3600,
             "strd":lambda f:f/3600,
             "ssr":lambda f:f/3600,
             "str":lambda f:f/3600,
-            "tp":lambda w:np.clip(w*1000,0,None), ## convert to kg/m^2
+
+            ## originally m equivalent; m * kg/m^3 -> kg/m^2
             "e":lambda w:w*1000,
-            "pev":lambda w:w*1000,
-            "var251":lambda w:w*1000,
+            "var251":lambda w:w*1000, ## potential evaporatin
+            "tp":lambda w:np.clip(w*1000,0,None),
+
+            "src":lambda w:np.clip(w*1000,0,None), ## src not an accumulation
+            "ssro":lambda w:w*1000,
+            "sro":lambda w:w*1000,
             "ro":lambda w:w*1000,
+            "es":lambda w:w*1000,
+
             "evatc":lambda w:w*1000,
             "evabs":lambda w:w*1000,
             "evaow":lambda w:w*1000,
             "evavt":lambda w:w*1000,
-            "smlt":lambda w:w*1000,
-            "sf":lambda w:w*1000,
-            "src":lambda w:np.clip(w*1000,0,None),
-            "es":lambda w:w*1000,
-            "ssro":lambda w:w*1000,
-            "sro":lambda w:w*1000,
+
+            #"smlt":lambda w:w*1000,
+            #"sf":lambda w:w*1000,
+
+            ## originally m^3/m^3; m^3/m^3 * kg/m^3 * dz -> kg/m^2
+            "swvl1":lambda w:w*1000*.07,
+            "swvl2":lambda w:w*1000*.21,
+            "swvl3":lambda w:w*1000*.72,
+            "swvl4":lambda w:w*1000*1.89,
             }
     extract_methods = {
             "snveg":get_grib_extract_gen(
@@ -372,7 +383,7 @@ if __name__=="__main__":
         "static_array":np.stack([
             x if type(x)==np.ndarray else x.data for x in sdata
             ], axis=-1),
-        "chunk_shape":(192,64,27),
+        "chunk_shape":(192,64,34),
         "m_valid":m_valid,
         "label_mapping":label_mapping,
         "permutation":perm[:,0],

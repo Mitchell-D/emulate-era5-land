@@ -26,8 +26,10 @@
 
 ### Ouput files
 ###SBATCH --open-mode=append ### Don't overwrite existing files
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.out # STDOUT
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.err # STDERR
+###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.out # STDOUT
+###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.err # STDERR
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridhists.out # STDOUT
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridhists.err # STDERR
 
 cd /rhome/mdodson/emulate-era5-land
 
