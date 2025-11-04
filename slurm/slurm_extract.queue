@@ -5,18 +5,18 @@
 #SBATCH --mail-user=mtd0012@uah.edu
 
 ### queue type
-###SBATCH -p standard
-#SBATCH -p shared
+#SBATCH -p standard
+###SBATCH -p shared
 
 ### TOTAL processors (number of tasks)
-#SBATCH --ntasks 20
+#SBATCH --ntasks 9
 ###SBATCH --ntasks 2
 
 ### total run time estimate (D-HH:MM)
 #SBATCH -t 2-00:00
 
 ### memory (MB per CPU)
-#SBATCH --mem-per-cpu=8G
+#SBATCH --mem-per-cpu=6G
 
 ### Mail to user on job done and fail
 #SBATCH --mail-type=END,FAIL
@@ -28,12 +28,14 @@
 #SBATCH --open-mode=append ### Don't overwrite existing files
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.err # STDERR
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_nldas2_0.out # STDOUT
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_nldas2_0.err # STDERR
+###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_nldas2_0.out # STDOUT
+###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_nldas2_0.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.err # STDERR
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_nldas2_2012-2023.out # STDOUT
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_nldas2_2012-2023.err # STDERR
 
 cd /rhome/mdodson/emulate-era5-land
 
@@ -41,6 +43,7 @@ cd /rhome/mdodson/emulate-era5-land
 set runcmd = /nas/rhome/mdodson/.micromamba/envs/learn-torch/bin/python
 ##${runcmd} -u scripts/extract_static.py
 ##${runcmd} -u emulate_era5_land/extract_era5.py
+${runcmd} -u emulate_era5_land/extract_nldas2.py
 ##${runcmd} -u scripts/test_generators.py
-${runcmd} -u scripts/get_permutation.py
+##${runcmd} -u scripts/get_permutation.py
 ##${runcmd} -u scripts/eval_gridstats.py
