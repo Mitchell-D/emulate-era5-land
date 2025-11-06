@@ -154,6 +154,9 @@ class Evaluator(ABC):
     @property
     def meta(self):
         return self._m
+    @property
+    def evtype(self):
+        return self._t
 
     def to_tuple(self):
         """ Dump the attribute dicts for this instance into a tuple """
@@ -377,12 +380,22 @@ class EvalJointHist(Evaluator):
     def final_results(self):
         """ """
         ## can't calculate variance of only one value
-        m_valid = (self._r["counts"] >= 2)
-        c = np.where(m_valid, self._r["counts"], np.nan)
-        m = np.where(m_valid, self._r["cov_mean"], np.nan)
-        v = np.where(m_valid, self._r["cov_m2"]/self._r["counts"], np.nan)
-        return {"counts":c, "cov_mean":m, "cov_var":v,
+        results = {"counts":[], "cov_mean":[], "cov_var":[],
             "hist_coords":self._hcoords, "hist_diffs":self._hdiffs}
+        for i in range(len(self._r["counts"])):
+            print(self._r["counts"][i].shape)
+            m_valid = (self._r["counts"][i] > 1)
+            #c = self._r["counts"][i]
+            #c[~m_valid] = np.nan
+            c = np.where(m_valid, self._r["counts"][i], np.nan)
+            results["counts"].append(c)
+            if self._do_cf:
+                m = np.where(m_valid[...,None], self._r["cov_mean"][i], np.nan)
+                v = self._r["cov_m2"][i]/self._r["counts"][i][...,None]
+                v = np.where(m_valid[...,None], v, np.nan)
+                results["cov_mean"].append(m)
+                results["cov_var"].append(v)
+        return results
 
 class EvalSampleSources(Evaluator):
     """

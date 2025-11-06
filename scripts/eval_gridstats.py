@@ -121,23 +121,30 @@ def plot_gridstats_spatial(gridstat_path, fig_dir:Path, plot_spec_per_feat={},
                 )
 if __name__=="__main__":
     data_dir = Path("/rstor/mdodson/era5")
-    tg_dir = data_dir.joinpath("timegrids")
+    tg_dir = data_dir.joinpath("timegrids-new")
     gridstat_dir = data_dir.joinpath("gridstats")
     #fig_dir = Path("/rhome/mdodson/emulate-era5-land/figures/gridstats")
     fig_dir = Path(
             "/rhome/mdodson/emulate-era5-land/figures/gridstats-unbounded")
+    '''
     era5_info = json.load(Path("data/list_feats_era5.json").open("r"))
     gs_path = gridstat_dir.joinpath("gridstats_era5_2012-2023.h5")
     gh_path = gridstat_dir.joinpath("gridhists_era5_2012-2023.h5")
-    info_era5 = json.load(Path("data/list_feats_era5.json").open("r"))
+    '''
+    #'''
+    #era5_info = json.load(Path("data/list_feats_nldas2.json").open("r"))
+    gs_path = gridstat_dir.joinpath("gridstats_nldas2_2012-2023.h5")
+    gh_path = gridstat_dir.joinpath("gridhists_nldas2_2012-2023.h5")
+    #'''
 
     ## select timegrids for the gridstat/gridhist files
-    substr = "timegrid_era5"
+    #substr = "timegrid_era5"
+    substr = "timegrid_nldas2"
     timegrids = sorted([p for p in tg_dir.iterdir() if substr in p.name])
     print(timegrids)
 
     ## generate the gridstat hdf5 from timegrid hdf5s
-    '''
+    #'''
     make_gridstat_hdf5(
             timegrids=timegrids,
             out_file=gs_path,
@@ -147,11 +154,13 @@ if __name__=="__main__":
             nworkers=16,
             debug=True,
             )
-    '''
+    #'''
+
+    exit(0)
 
     ## generate the gridhist hdf5 from timegrid hdf5s
     '''
-    hist_bounds = info_era5["hist-bounds"]
+    hist_bounds = era5_info["hist-bounds"]
     make_gridhist_hdf5(
             timegrids=timegrids,
             out_file=gh_path,
@@ -242,8 +251,8 @@ if __name__=="__main__":
             if normalize:
                 tmp_hist = tmp_hist.astype(np.float64) / np.sum(tmp_hist)
                 tmp_hist[tmp_hist==0] = np.nan
-            lname = info_era5["desc-mapping"][fk]
-            units = info_era5["units"]["dynamic"][fk]
+            lname = era5_info["desc-mapping"][fk]
+            units = era5_info["units"]["dynamic"][fk]
             plot_hists(
                     counts=[tmp_hist],
                     labels=[f"{fk} {units}"],
@@ -295,9 +304,9 @@ if __name__=="__main__":
                     tmp_hist[tmp_hist==0] = np.nan
                 hists.append(tmp_hist)
                 labels.append(
-                        info_era5["static-classes"][strat_param][str(st)])
-            lname = info_era5["desc-mapping"][fk]
-            units = info_era5["units"]["dynamic"][fk]
+                        era5_info["static-classes"][strat_param][str(st)])
+            lname = era5_info["desc-mapping"][fk]
+            units = era5_info["units"]["dynamic"][fk]
             plot_hists(
                     counts=hists,
                     labels=labels,

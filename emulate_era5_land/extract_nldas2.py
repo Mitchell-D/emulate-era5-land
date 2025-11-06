@@ -135,7 +135,8 @@ def extract_nldas2_year(
             }
 
     ## _extract_nldas2_files combines the arrays with nldas values first
-    flabels = nldas_labels + noahlsm_labels
+    flabels = [l for l in nldas_labels if l not in nldas_ignore] \
+            + [l for l in noahlsm_labels if l not in noahlsm_ignore]
     args = [{
         "nldas_path":pf, "noahlsm_path":pm,
         "nldas_nfeats":len(nldas_labels), "noahlsm_nfeats":len(noahlsm_labels),
@@ -264,8 +265,8 @@ if __name__=="__main__":
     nldas2_dir = Path("/rstor/mdodson/thesis/nldas2")
     noahlsm_dir = Path("/rstor/mdodson/thesis/noahlsm")
 
-    years = [2021]
-    years += [years[0]+1, years[0]+2]
+    years = [2017]
+    #years += [years[0]+1]
     workers = 8
 
     for year in years:

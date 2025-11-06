@@ -258,6 +258,7 @@ if __name__=="__main__":
     df_diff_all = df_diff_true+df_diff_pred+df_diff_err_bias+df_diff_err_abs
 
     ## eval_{model}_{eval-type}_{instance-str}.pkl
+    ## (eval-group, instance-str, instance-params)
     eval_config = [
         ("temporal", "intg-all", [df_intg_all]),
         ("temporal", "diff-all", [df_diff_all]),
@@ -402,8 +403,10 @@ if __name__=="__main__":
                 pkl.dump(ev, pkl_path.open("wb"))
                 print(f"Wrote to {pkl_path.name}")
 
-    ## Final evaluator save.
-    for en,ev in zip(ev_names,evals):
-        pkl_path = pkl_dir.joinpath(en+".pkl")
-        pkl.dump(ev, pkl_path.open("wb"))
-        print(f"Wrote to {pkl_path.name}")
+    ## If the last batch didn't save...
+    if not (i+1)%save_every_nbatches == 0:
+        ## Final evaluator save.
+        for en,ev in zip(ev_names,evals):
+            pkl_path = pkl_dir.joinpath(en+".pkl")
+            pkl.dump(ev, pkl_path.open("wb"))
+            print(f"Wrote to {pkl_path.name}")
