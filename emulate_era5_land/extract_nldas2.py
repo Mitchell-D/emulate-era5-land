@@ -21,6 +21,7 @@ from emulate_era5_land.helpers import get_permutation_inverse
 
 def _extract_nldas2_files(nldas_path, noahlsm_path, nldas_nfeats,
         noahlsm_nfeats, crop_y=(0,0), crop_x=(0,0), m_valid=None,
+        dtype=np.float32, permutation=None,
         drop_nldas_records=[], drop_noahlsm_records=[],
         ):
     assert nldas_path.exists(),nldas_path
@@ -44,7 +45,7 @@ def _extract_nldas2_files(nldas_path, noahlsm_path, nldas_nfeats,
         grb_noahlsm.seek(rix)
         feats.append(grb_noahlsm.read(1)[0].values)
     ## stack features and flip y axis due to file storage orientation.
-    feats = np.stack(feats, axis=-1)[::-1]
+    feats = np.stack(feats, axis=-1, dtype=dtype)[::-1]
 
     grb_nldas.close()
     grb_noahlsm.close()
@@ -53,10 +54,15 @@ def _extract_nldas2_files(nldas_path, noahlsm_path, nldas_nfeats,
     ## Make a spatial slice tuple for sub-gridding dynamic and static data
     crop_slice = (slice(crop_y0,feats.shape[0]-crop_yf),
             slice(crop_x0,feats.shape[1]-crop_xf))
+    ## crop, then apply valid pixel mask
     if m_valid is None:
-        return feats[*crop_slice].reshape(-1,feats.shape[-1])
+        feats = feats[*crop_slice].reshape(-1,feats.shape[-1])
     else:
-        return feats[*crop_slice][m_valid]
+        feats =  feats[*crop_slice][m_valid]
+    ## apply the permutation if provided
+    if not permutation is None:
+        feats = feats[permutation]
+    return feats
 
 def _mp_extract_nldas2_files(args):
     return _extract_nldas2_files(**args)
@@ -137,8 +143,8 @@ def extract_nldas2_year(
             i for i,l in enumerate(nldas_labels) if l in nldas_ignore],
         "drop_noahlsm_records":[
             i for i,l in enumerate(noahlsm_labels) if l in noahlsm_ignore],
-        "crop_y":crop_y, "crop_x":crop_x,
-        "m_valid":m_valid,
+        "crop_y":crop_y, "crop_x":crop_x, "dtype":file_dtype,
+        "m_valid":m_valid, "permutation":permutation,
         } for pf,pm in zip(nldas_files,noahlsm_files)]
     H5F = None
     cur_h5_ix = 0
@@ -232,7 +238,7 @@ def extract_nldas2_year(
             print(f"writing {X.shape} starting at position {cur_h5_ix}")
             cur_slice = slice(cur_h5_ix, cur_h5_ix+X.shape[0])
             D.resize((cur_slice.stop, *X.shape[1:]))
-            D[cur_slice] = X.astype(file_dtype)[:,permutation]
+            D[cur_slice] = X
             T.resize((cur_slice.stop,))
             T[cur_slice] = etimes[cur_slice]
             cur_h5_ix = cur_slice.stop
@@ -240,8 +246,11 @@ def extract_nldas2_year(
                 tmpt = datetime.fromtimestamp(int(etimes[cur_slice.start]),
                         tz=timezone.utc)
                 print(f"{i+1}/{len(args)}: now {D.shape} at {tmpt}")
-            H5F.flush()
+
             cur_buf = []
+            del X
+            H5F.flush()
+            gc.collect()
     return out_h5_path
 
 if __name__=="__main__":
@@ -255,8 +264,8 @@ if __name__=="__main__":
     nldas2_dir = Path("/rstor/mdodson/thesis/nldas2")
     noahlsm_dir = Path("/rstor/mdodson/thesis/noahlsm")
 
-    years = [2018]
-    years += [years[0]+1]
+    years = [2021]
+    years += [years[0]+1, years[0]+2]
     workers = 8
 
     for year in years:

@@ -31,13 +31,13 @@
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_gridstats_eval.err
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.out
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.err
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_acclstm-era5-swm-9.out
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_acclstm-era5-swm-9.err
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_models_1.out
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_models_1.err
 
 cd /rhome/mdodson/emulate-era5-land
 
 ## Run code
-set runcmd = /rhome/mdodson/.micromamba/envs/learn-torch/bin/python
+set runcmd = /rhome/mdodson/.micromamba/envs/learn-torch-meteor/bin/python
 #${runcmd} -u scripts/test_generators.py
 ##${runcmd} -u scripts/eval_gridstats.py
 ${runcmd} -u scripts/eval_models.py

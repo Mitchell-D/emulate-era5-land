@@ -8,7 +8,7 @@
 #SBATCH -p standard --gres=gpu:1
 
 ### TOTAL processors (number of tasks)
-#SBATCH --ntasks 9
+#SBATCH --ntasks 13
 ####SBATCH --ntasks 1
 
 ### total run time estimate (D-HH:MM)

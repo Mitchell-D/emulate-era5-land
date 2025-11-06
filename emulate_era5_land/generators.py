@@ -137,7 +137,7 @@ class PredictionDataset(torch.utils.data.IterableDataset):
         """ """
         inputs,(y,),aux = next(self._dl)
         w,h,s,si,init = inputs
-        p = self._model(w, h, s, si, device=self._device)
+        p = self._model(w, h, s, si, target=y, device=self._device)
         self._cur_ix = 0
 
         ## send all datasets to the output device

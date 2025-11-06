@@ -255,7 +255,8 @@ class AccLSTM(tnn.Module):
             ## teacher_forcing, else the integrated model outputs.
             self.samples.append((
                     (window[0], horizon[0], static[0], static_int[0]),
-                    (target[0], P[0], pc_init[0])
+                    (None if target is None else target[0],
+                        P[0], pc_init[0])
                     ))
         return P
 

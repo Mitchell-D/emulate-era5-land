@@ -1,6 +1,7 @@
 import numpy as np
 import json
 import torch
+import pickle as pkl
 from pathlib import Path
 from time import perf_counter
 from multiprocessing import Pool
@@ -21,77 +22,124 @@ eval_options = {
                  "time_slice":"horizon",
                 },
             },
+        "sample-sources":{
+            "eval_type":"EvalSampleSources",
+            "manual_args":[],
+            "defaults":{
+                "vidx_feat":("auxs", "vidxs"),
+                "hidx_feat":("auxs", "hidxs"),
+                "time_feat":("time", "epoch"),
+                "cov_feats":[],
+                "cov_reduce_metric":None,
+                "cov_reduce_axes":(1,),
+                },
+            },
+        "hist-vc-swm-7":{ ## validation curve histograms
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("target","swm-7"), ("pred","swm-7")],
+                "axis_params":[(0,.8,256),(0,.8,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-vc-swm-28":{ ## validation curve histograms
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("target","swm-28"), ("pred","swm-28")],
+                "axis_params":[(0,.8,256),(0,.8,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-vc-swm-100":{ ## validation curve histograms
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("target","swm-100"), ("pred","swm-100")],
+                "axis_params":[(0,.8,256),(0,.8,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-vc-swm-289":{ ## validation curve histograms
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("target","swm-289"), ("pred","swm-289")],
+                "axis_params":[(0,.8,256),(0,.8,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-tmp-dwpt":{
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("horizon","tmp"), ("horizon","dwpt")],
+                "axis_params":[(220,320,256),(220,320,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-diff-swm-7":{
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("target","swm-7"), ("target","diff swm-7")],
+                "axis_params":[(0,.8,256),(-.01,.01,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-diff-swm-28":{
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("target","swm-28"), ("target","diff swm-28")],
+                "axis_params":[(0,.8,256),(-.005,.005,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-diff-swm-100":{
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("target","swm-100"), ("target","diff swm-100")],
+                "axis_params":[(0,.8,256),(-.001,.001,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-diff-swm-289":{
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("target","swm-289"), ("target","diff swm-289")],
+                "axis_params":[(0,.8,256),(-.0005,.0005,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-tmp-snow":{
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("horizon","tmp"), ("horizon","wm-snow")],
+                "axis_params":[(220,320,256),(0,1,256)],
+                "round_oob":True,
+                },
+            },
+        "hist-trsp-evp":{
+            "eval_type":"EvalJointHist",
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[("auxd-h","evp-trsp"),
+                    ("auxd-h","evp")],
+                "axis_params":[(-.15,.05,256),(-.15,.05,256)],
+                "round_oob":True,
+                },
+            },
         }
-
-'''
-        "horizon":{
-            "eval_type":evaluators.EvalHorizon,
-            "default_args":["pred_coarseness", "attrs"],
-            "required_args":[],
-            "defaults":{},
-            },
-        "static-combos":{
-            "eval_type":evaluators.EvalStatic,
-            "default_args":["soil_idxs", "attrs"],
-            "required_args":["use_absolute_error"],
-            "defaults":{},
-            },
-        "efficiency":{
-            "eval_type":evaluators.EvalEfficiency,
-            "default_args":["pred_coarseness", "attrs"],
-            "required_args":["pred_feat"],
-            "defaults":{},
-            },
-        "hist-true-pred":{
-            "eval_type":evaluators.EvalJointHist,
-            "default_args":[
-                "ax1_hbounds", "ax2_hbounds", "ax1_hres", "ax2_hres", "attrs"],
-            "required_args":["ax1", "ax2"],
-            "defaults":{"ax1_dataset":"target", "ax2_dataset":"pred"},
-            },
-        "hist-saturation-error":{
-            "eval_type":evaluators.EvalJointHist,
-            "default_args":[
-                "ax1_hbounds", "ax2_hbounds", "ax1_hres", "ax2_hres",
-                "cov_dataset", "cov_feat", "pred_coarseness",
-                "use_absolute_error", "attrs"],
-            "required_args":["ax1", "ax2"],
-            "defaults":{
-                "ax1_dataset":"target", "ax2_dataset":"pred",
-                "use_absolute_error":False, "cov_dataset":"error"},
-            },
-        "hist-state-increment":{
-            "eval_type":evaluators.EvalJointHist,
-            "default_args":[
-                "ax1_dataset", "ax2_dataset", "ax1_feat", "ax2_feat",
-                "ax1_hbounds", "ax2_hbounds", "ax1_hres", "ax2_hres",
-                "cov_dataset", "pred_coarseness", "ignore_nan", "attrs"],
-            "required_args":["cov_feat","use_absolute_error"],
-            "defaults":{
-                "ax1_dataset":"target", "ax2_dataset":"target",
-                "cov_dataset":"error", "ignore_nan":True,
-                },
-            },
-        "hist-humidity-temp":{
-            "eval_type":evaluators.EvalJointHist,
-            "default_args":[
-                "ax1_dataset", "ax2_dataset", "ax1_feat", "ax2_feat",
-                "ax1_hbounds", "ax2_hbounds", "ax1_hres", "ax2_hres",
-                "cov_dataset", "pred_coarseness", "ignore_nan", "attrs"],
-            "required_args":["cov_feat","use_absolute_error"],
-            "defaults":{
-                "ax1_dataset":"horizon", "ax1_feat":"dwpt",
-                "ax2_dataset":"horizon", "ax2_feat":"tmp",
-                "cov_dataset":"error", "coarse_reduce_func":"mean",
-                "ignore_nan":True,
-                },
-            },
-'''
 
 def mp_add_batch(args):
     """  """
-    ev,bd = args
-    return ev.add_batch(bd)
+    evt,bd = args
+    return evaluators.Evaluator.from_tuple(evt).add_batch(bd).to_tuple()
 
 def get_eval_from_config(model_config, dataset_feats, eval_tuple):
     """
@@ -168,17 +216,20 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple):
 if __name__=="__main__":
     proj_root = Path("/rhome/mdodson/emulate-era5-land")
     model_parent_dir = proj_root.joinpath("data/models")
-    model_dir = model_parent_dir.joinpath("acclstm-era5-swm-9")
-    model_name = "acclstm-era5-swm-9_state_0069.pwf"
+    #model_name = "acclstm-era5-swm-9_state_0069.pwf"
+    #model_name = "acclstm-era5-swm-50_state_0120.pwf"
+    model_name = "acclstm-era5-swm-64_state_0024.pwf"
+    model_dir = model_parent_dir.joinpath(model_name.split("_")[0])
     pkl_dir = proj_root.joinpath("data/eval")
     debug = True
 
     batch_size = 256
     prefetch_factor = 6
-    num_batches = 2048
+    #num_batches = 2048
+    num_batches = 512
     save_every_nbatches = 32
-    nworkers_dataset = 12
-    nworkers_eval = 2
+    nworkers_dataset = 9
+    nworkers_eval = 4
 
     eval_tgs = [
             proj_root.joinpath(f"data/timegrids/timegrid_era5_{year}.h5")
@@ -193,10 +244,15 @@ if __name__=="__main__":
     df_diff_err_abs = [("err-abs",k) for k in f_diff]
     df_intg_err_bias = [("err-bias",k) for k in f_intg]
     df_intg_err_abs = [("err-abs",k) for k in f_intg]
+    df_intg_err = df_intg_err_bias + df_intg_err_abs
     df_diff_pred = [("pred",k) for k in f_diff]
     df_intg_pred = [("pred",k) for k in f_intg]
     df_diff_true = [("target",k) for k in f_diff]
     df_intg_true = [("target",k) for k in f_intg]
+    df_err_all = [[
+        ("err-bias", f), ("err-abs", f),
+        ("err-bias", f"diff {f}"), ("err-abs", f"diff {f}"),
+        ] for f in f_intg]
 
     df_intg_all = df_intg_true+df_intg_pred+df_intg_err_bias+df_intg_err_abs
     df_diff_all = df_diff_true+df_diff_pred+df_diff_err_bias+df_diff_err_abs
@@ -205,6 +261,17 @@ if __name__=="__main__":
     eval_config = [
         ("temporal", "intg-all", [df_intg_all]),
         ("temporal", "diff-all", [df_diff_all]),
+        ("hist-vc-swm-7", "counts", [[], []]),
+        ("hist-vc-swm-28", "counts", [[], []]),
+        ("hist-vc-swm-100", "counts", [[], []]),
+        ("hist-vc-swm-289", "counts", [[], []]),
+        ("hist-tmp-dwpt", "err-all", [df_intg_err, []]),
+        ("hist-diff-swm-7", "err-all", [df_err_all[0], []]),
+        ("hist-diff-swm-28", "err-all", [df_err_all[1], []]),
+        ("hist-diff-swm-100", "err-all", [df_err_all[2], []]),
+        ("hist-diff-swm-289", "err-all", [df_err_all[3], []]),
+        ("hist-tmp-snow", "err-all", [df_err_all[0], []]),
+        ("hist-trsp-evp", "err-all", [df_intg_err, []]),
         ]
 
     ## declare a prediction dataset based on the already-trained model
@@ -215,7 +282,11 @@ if __name__=="__main__":
             normalized_outputs=False,
             config_override={
                 "feats":{
-                    "horizon_size":336,
+                    #"horizon_size":336,
+                    "horizon_size":24*5,
+                    "aux_dynamic_feats":list(set([
+                        *md.config["feats"]["aux_dynamic_feats"],
+                        "evp-trsp", "evp"])),
                     },
                 "data":{
                     "eval":{
@@ -265,8 +336,11 @@ if __name__=="__main__":
             "horizon":md.config["feats"]["horizon_feats"],
             "static":md.config["feats"]["static_feats"],
             "static-int":md.config["feats"]["static_int_feats"],
-            "aux-dynamic":md.config["feats"]["aux_dynamic_feats"],
-            "aux-static":md.config["feats"]["aux_static_feats"],
+            "auxd-h":list(set([
+                *md.config["feats"]["aux_dynamic_feats"], "evp-trsp", "evp"])),
+            "auxd-w":list(set([
+                *md.config["feats"]["aux_dynamic_feats"], "evp-trsp", "evp"])),
+            "auxs":md.config["feats"]["aux_static_feats"],
             "time":["epoch"],
             "target":md.config["feats"]["target_feats"]+integ_feats,
             "pred":md.config["feats"]["target_feats"]+integ_feats,
@@ -277,6 +351,8 @@ if __name__=="__main__":
     ## declare the Evaluator subclass objects
     evals = [get_eval_from_config(md.config, dataset_feats, ctup)
             for ctup in eval_config]
+    ev_names = [ev.meta["name"] for ev in evals]
+    evals = [ev.to_tuple() for ev in evals]
 
     for i in range(num_batches):
         ## unpack the batch data
@@ -298,10 +374,14 @@ if __name__=="__main__":
             ], axis=-1)
         e = p-y
 
+        wslice = slice(0,md.config["feats"]["window_size"])
+        hslice = slice(-md.config["feats"]["horizon_size"],None)
+
         ## construct a dictionary with all relevant data from this batch
         bdict = {"window":w, "horizon":h, "static":s, "static-int":si,
-                 "aux-dynamic":a_d, "aux-static":a_s, "time":t, "target":y,
-                 "pred":p, "err-bias":e, "err-abs":np.abs(e), }
+                "auxd-w":a_d[:,wslice], "auxd-h":a_d[:,hslice],
+                "auxs":a_s, "time":t, "target":y,
+                "pred":p, "err-bias":e, "err-abs":np.abs(e), }
 
         ## update the evaluators
         if debug:
@@ -309,15 +389,21 @@ if __name__=="__main__":
 
         with Pool(nworkers_eval) as pool:
             evals = pool.map(mp_add_batch, [(ev,bdict) for ev in evals])
+        #for ev in evals:
+        #    ev.add_batch(bdict)
         if debug:
             _t1 = perf_counter()
             print(f"B{i+1:03} evaluator total: {_t1-_t0:.3f}")
 
         ## periodically save the evaluators as pkls
         if (i+1)%save_every_nbatches == 0:
-            for ev in evals:
-                ev.to_pkl(pkl_dir.joinpath(ev.meta["name"]+".pkl"))
+            for en,ev in zip(ev_names,evals):
+                pkl_path = pkl_dir.joinpath(en+".pkl")
+                pkl.dump(ev, pkl_path.open("wb"))
+                print(f"Wrote to {pkl_path.name}")
 
     ## Final evaluator save.
-    for ev in evals:
-        ev.to_pkl(pkl_dir.joinpath(ev.meta["name"]+".pkl"))
+    for en,ev in zip(ev_names,evals):
+        pkl_path = pkl_dir.joinpath(en+".pkl")
+        pkl.dump(ev, pkl_path.open("wb"))
+        print(f"Wrote to {pkl_path.name}")
