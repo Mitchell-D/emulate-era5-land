@@ -20,10 +20,23 @@ or more conditions that must evaluate to True per sample in order
 for inclusion in the corresponding hist. As such, a separate hist
 will be developed for each condition.
 
+**EvalStatic**
+
+For each combination of static values (provided up-front), capture
+the mean, standard deviation, max, min, (+timing of max/min?)
+
+ 1. get the requested feature data (B,S,F)
+ 2. reduce axes in the requested order and using the requested
+    functions (ie [(2, "sum"), ])
+
 **EvalAxes**
 
 Marginalize over arbitrary subset of axes using one or more reduce
 functions
+
+ 1. get the requested feature data (B,S,F)
+ 2. reduce axes in the requested order and using the requested
+    functions (ie [(2, "sum"), ])
 
 **EvalConditional**
 

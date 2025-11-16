@@ -134,6 +134,26 @@ eval_options = {
                 "round_oob":True,
                 },
             },
+
+        "static-grid":{
+            "eval_type":"EvalStatic",
+            "manual_args":["data_feats", "reduce_func",
+                "collect_mean_var", "collect_min_max"],
+            "defaults":{
+                "static_feats":[("auxs","vidxs"), ("auxs","hidxs")],
+                "static_values":["vidxs","hidxs"],
+                },
+            },
+        "static-combos":{
+            "eval_type":"EvalStatic",
+            "manual_args":["data_feats", "reduce_func",
+                "collect_mean_var", "collect_min_max"],
+            "defaults":{
+                "static_feats":[("auxs","vt-low"),
+                    ("auxs","vt-high"), ("auxs","soilt")],
+                "static_values":["vt-low","vt-high", "soilt"],
+                },
+            },
         }
 
 def mp_add_batch(args):
@@ -141,7 +161,8 @@ def mp_add_batch(args):
     evt,bd = args
     return evaluators.Evaluator.from_tuple(evt).add_batch(bd).to_tuple()
 
-def get_eval_from_config(model_config, dataset_feats, eval_tuple):
+def get_eval_from_config(model_config, dataset_feats, eval_tuple,
+        static_labels=None, static_data=None):
     """
     Given a model configuration dict, a dict enumerating the features in each
     category, and a single tuple providing a evaluator instance type and
@@ -160,6 +181,10 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple):
         is a unique string identifier describing this evaluator instance, and
         args is an iterable of positional values corresponding to the
         manual_args labels in the configuration.
+    :@param static_labels: List of labels for each static data feature. These
+        must be provided if using EvalStatic config substitutions.
+    :@param static_data: Nx(Fs,) list of arrays of global static pixel data for
+        reference when creating static coordinate arrays.
     """
     eval_category,eval_label,manual_args = eval_tuple
     eval_cfg = eval_options[eval_category]
@@ -204,6 +229,13 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple):
             eval_params[a] = manual_args[a]
         else:
             raise ValueError(f"Required argument not provided: {a}")
+        if a=="static_values":
+            assert isinstance(eval_params[a], (list,tuple))
+            ## replace string references with the static data unique values
+            for i,ep in enumerate(eval_params[a]):
+                if isinstance(ep, str):
+                    eval_params[a][i] = np.unique(
+                            static_data[static_labels.index(ep)])
 
     name_fields = ("eval", model_config["name"], eval_category, eval_label)
     ## declare and return the Evaluator based on its configured type.
@@ -215,20 +247,24 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple):
 
 if __name__=="__main__":
     proj_root = Path("/rhome/mdodson/emulate-era5-land")
-    model_parent_dir = proj_root.joinpath("data/models")
-    #model_name = "acclstm-era5-swm-9_state_0069.pwf"
-    #model_name = "acclstm-era5-swm-50_state_0120.pwf"
-    model_name = "acclstm-era5-swm-64_state_0024.pwf"
-    model_dir = model_parent_dir.joinpath(model_name.split("_")[0])
     pkl_dir = proj_root.joinpath("data/eval")
-    debug = True
+    model_parent_dir = proj_root.joinpath("data/models")
+    ## static data for reference building coordinate arrays for EvalStatic
+    slabels,sdata = pkl.load(proj_root.joinpath(
+        "data/static/era5_static.pkl"
+        ).open("rb"))
 
-    batch_size = 256
+    model_name = "acclstm-era5-swm-9_state_0069.pwf"
+    #model_name = "acclstm-era5-swm-50_state_0120.pwf"
+    #model_name = "acclstm-era5-swm-64_state_0024.pwf"
+
+    debug = True
+    batch_size = 512
     prefetch_factor = 6
     #num_batches = 2048
-    num_batches = 512
+    num_batches = 4096
     save_every_nbatches = 32
-    nworkers_dataset = 9
+    nworkers_dataset = 8
     nworkers_eval = 4
 
     eval_tgs = [
@@ -263,55 +299,66 @@ if __name__=="__main__":
         ("temporal", "intg-all", [df_intg_all]),
         ("temporal", "diff-all", [df_diff_all]),
         ("hist-vc-swm-7", "counts", [[], []]),
-        ("hist-vc-swm-28", "counts", [[], []]),
-        ("hist-vc-swm-100", "counts", [[], []]),
-        ("hist-vc-swm-289", "counts", [[], []]),
+        #("hist-vc-swm-28", "counts", [[], []]),
+        #("hist-vc-swm-100", "counts", [[], []]),
+        #("hist-vc-swm-289", "counts", [[], []]),
         ("hist-tmp-dwpt", "err-all", [df_intg_err, []]),
         ("hist-diff-swm-7", "err-all", [df_err_all[0], []]),
-        ("hist-diff-swm-28", "err-all", [df_err_all[1], []]),
-        ("hist-diff-swm-100", "err-all", [df_err_all[2], []]),
-        ("hist-diff-swm-289", "err-all", [df_err_all[3], []]),
+        #("hist-diff-swm-28", "err-all", [df_err_all[1], []]),
+        #("hist-diff-swm-100", "err-all", [df_err_all[2], []]),
+        #("hist-diff-swm-289", "err-all", [df_err_all[3], []]),
         ("hist-tmp-snow", "err-all", [df_err_all[0], []]),
-        ("hist-trsp-evp", "err-all", [df_intg_err, []]),
+        #("hist-trsp-evp", "err-all", [df_intg_err, []]),
+        ("static-grid", "err-all-mean", [df_err_all[0],"mean",True,False]),
+        ("static-combos", "err-all-mean", [df_err_all[0],"mean",True,False]),
         ]
 
+    aux_dynamic_addons = ["evp-trsp", "evp"]
+    aux_static_addons = ["vt-high", "vt-low", "soilt", "vidxs", "hidxs"]
+
     ## declare a prediction dataset based on the already-trained model
+    model_dir = model_parent_dir.joinpath(model_name.split("_")[0])
     md = ModelDir(model_dir)
+    aux_dynamic_feats = md.config["feats"]["aux_dynamic_feats"] + \
+        list(filter(lambda f:f not in md.config["feats"]["aux_dynamic_feats"],
+                aux_dynamic_addons))
+    aux_static_feats = md.config["feats"]["aux_static_feats"] + \
+        list(filter(lambda f:f not in md.config["feats"]["aux_static_feats"],
+                aux_static_addons))
     pds = PredictionDataset(
-            model_path=model_dir.joinpath(model_name),
-            use_dataset="eval",
-            normalized_outputs=False,
-            config_override={
-                "feats":{
-                    #"horizon_size":336,
-                    "horizon_size":24*5,
-                    "aux_dynamic_feats":list(set([
-                        *md.config["feats"]["aux_dynamic_feats"],
-                        "evp-trsp", "evp"])),
-                    },
-                "data":{
-                    "eval":{
-                        "timegrids":eval_tgs,
-                        "shuffle":True,
-                        "sample_cutoff":1.,
-                        "sample_across_files":True,
-                        "sample_under_cutoff":True,
-                        "sample_separation":409,
-                        "random_offset":True,
-                        "chunk_pool_count":48,
-                        "buf_size_mb":4096,
-                        "buf_slots":48,
-                        "buf_policy":0,
-                        "batch_size":batch_size,
-                        "num_workers":nworkers_dataset,
-                        "prefetch_factor":prefetch_factor,
-                        "out_dtype":"f4",
-                        },
+        model_path=model_dir.joinpath(model_name),
+        use_dataset="eval",
+        normalized_outputs=False,
+        config_override={
+            "feats":{
+                #"horizon_size":336,
+                "horizon_size":24*5,
+                "aux_dynamic_feats":aux_dynamic_feats,
+                "aux_static_feats":aux_static_feats,
+                },
+            "data":{
+                "eval":{
+                    "timegrids":eval_tgs,
+                    "shuffle":True,
+                    "sample_cutoff":1.,
+                    "sample_across_files":True,
+                    "sample_under_cutoff":True,
+                    "sample_separation":409,
+                    "random_offset":True,
+                    "chunk_pool_count":48,
+                    "buf_size_mb":4096,
+                    "buf_slots":48,
+                    "buf_policy":0,
+                    "batch_size":batch_size,
+                    "num_workers":nworkers_dataset,
+                    "prefetch_factor":prefetch_factor,
+                    "out_dtype":"f4",
                     },
                 },
-            output_device="cpu",
-            debug=False,
-            )
+            },
+        output_device="cpu",
+        debug=False,
+        )
 
     ## declare a data loader for the prediction dataset
     pdl = iter(torch.utils.data.DataLoader(
@@ -337,11 +384,9 @@ if __name__=="__main__":
             "horizon":md.config["feats"]["horizon_feats"],
             "static":md.config["feats"]["static_feats"],
             "static-int":md.config["feats"]["static_int_feats"],
-            "auxd-h":list(set([
-                *md.config["feats"]["aux_dynamic_feats"], "evp-trsp", "evp"])),
-            "auxd-w":list(set([
-                *md.config["feats"]["aux_dynamic_feats"], "evp-trsp", "evp"])),
-            "auxs":md.config["feats"]["aux_static_feats"],
+            "auxd-h":aux_dynamic_feats,
+            "auxd-w":aux_dynamic_feats,
+            "auxs":aux_static_feats,
             "time":["epoch"],
             "target":md.config["feats"]["target_feats"]+integ_feats,
             "pred":md.config["feats"]["target_feats"]+integ_feats,
@@ -350,8 +395,9 @@ if __name__=="__main__":
             }
 
     ## declare the Evaluator subclass objects
-    evals = [get_eval_from_config(md.config, dataset_feats, ctup)
-            for ctup in eval_config]
+    evals = [
+        get_eval_from_config(md.config, dataset_feats, ctup, slabels, sdata)
+        for ctup in eval_config]
     ev_names = [ev.meta["name"] for ev in evals]
     evals = [ev.to_tuple() for ev in evals]
 

@@ -30,8 +30,10 @@
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_era5_2012-2023.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_nldas2_0.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_discover_permutations_nldas2_0.err # STDERR
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats_nldas2.out # STDOUT
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats_nldas2.err # STDERR
+###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats_nldas2.out # STDOUT
+###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridstats_nldas2.err # STDERR
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridhists_nldas2.out # STDOUT
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_gridhists_nldas2.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.out # STDOUT
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.err # STDERR
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_extract_nldas2_2012-2023.out # STDOUT

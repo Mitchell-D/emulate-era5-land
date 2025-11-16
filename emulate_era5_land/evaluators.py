@@ -191,6 +191,165 @@ class Evaluator(ABC):
             f"{batch_dict[dataset].shape = } ; {len(self._f[dataset]) = }"
         return batch_dict[dataset][...,self._f[dataset].index(feat)]
 
+class EvalStatic(Evaluator):
+    """
+    Collects statistics with respect to combinations of static parameters.
+    On init, the user must provide a list of 1d arrays static_values
+    corresponding to each independent static parameter (each array containing
+    all valid values of that parameter), and a equal-sized list of 2-tuples
+    static_feats like (dataset:str, feat:str) which resolve to a single number
+    per batch sample during evaluation.
+
+    During evaluation, the static values of each sample in the batch are
+    checked for equality with each of the static coordinate axes.
+    Valid samples' data_feats are extracted, then reduced by reduce_func
+    before being incorporated into the results data. For each static value
+    combination, results recorded include:
+
+    global maximum, global minimum, mean, variance, count
+
+    Fundamentally, this is very similar to EvalJointHist in the sense that
+    creating a derived feat that returns a static value would yield the same
+    thing, but the use cases favor distinct bin indexing methods, so it is
+    worth keeping them separate.
+    """
+    _required = ["static_feats", "static_values", "data_feats", "reduce_func",
+            "collect_mean_var", "collect_min_max"]
+    def __init__(self, params:dict, feats:dict,
+            results:dict=None, meta:dict={}):
+        """ See superclass initializer. """
+        super(EvalStatic, self).__init__(
+                "EvalStatic",
+                params=params,
+                feats=feats,
+                results=results,
+                meta=meta,
+                )
+
+    def _validate_params(self):
+        """ """
+        ## set defaults for arguments that aren't really required
+        if "reduce_func" not in self._p.keys():
+            self._p["reduce_func"] = "mean"
+        else:
+            assert self._p["reduce_func"] in REDUCE_FUNCS, \
+                    f"{self._p['reduce_func']} NOT FOUND in:\n{REDUCE_FUNCS=}"
+
+        assert len(self._p["static_feats"])==len(self._p["static_values"])
+        self.scoords = []
+        ## Make sure all the static features are valid
+        for (dk,fk),v in zip(self._p["static_feats"],self._p["static_values"]):
+            assert dk in self._f.keys(), f"{dk} not in {list(self._f.keys())}"
+            assert fk in self._f[dk], f"{fk} not in dataset {dk} {self._f[dk]}"
+            v = np.array(v)
+            assert np.all(np.unique(v) == np.sort(v))
+            assert v.ndim==1,v.shape
+            self.scoords.append(v)
+        self.sshape = tuple(s.size for s in self.scoords)
+
+        ## Make sure all the data features are valid
+        for dk,fk in self._p["data_feats"]:
+            assert dk in self._f.keys(), f"{dk} not in {list(self._f.keys())}"
+            assert fk in self._f[dk], f"{fk} not in dataset {dk} {self._f[dk]}"
+
+    def add_batch(self, bdict:dict, dtype=np.float32):
+        """
+        1. extract static features and check each sample's inclusion in each
+           static coordinate axis. keep & record index if it is in all.
+        2. extract the data feats and reduce remaining samples according to
+           the provided reduce function
+        3. update the results array at each sample's static coordinate index.
+        """
+        ## extract static features
+        sfeats = [self.get_farray(*sf, bdict)
+            for sf in self._p["static_feats"]]
+        nb = sfeats[0].shape[0]
+        nsf = len(self._p["static_feats"])
+        ndf = len(self._p["data_feats"])
+
+        if self._r is None:
+            ## float64 for now just since it must be used as denominator
+            self._r = {"count":np.full(self.sshape, 0, dtype=np.float64)}
+            ## float32 for everything else
+            res_params = ((*self.sshape,ndf), np.nan, np.float32)
+            if self._p["collect_min_max"]:
+                self._r["min"] = np.full(*res_params)
+                self._r["max"] = np.full(*res_params)
+            if self._p["collect_mean_var"]:
+                self._r["mean"] = np.full(*res_params)
+                self._r["m2"] = np.full(*res_params)
+
+        ## determine which samples are valid, and their static indeces
+        sixs = np.full((nb, nsf), -1, dtype=int)
+        m_valid = np.full(nb, True)
+        for i in range(nsf):
+            y,x = np.meshgrid(sfeats[i], self.scoords[i], indexing="ij")
+            matches = (x==y)
+            m_valid = m_valid & np.any(matches, axis=1)
+            for j in range(nb):
+                if not m_valid[j]:
+                    continue
+                sixs[j,i] = np.argwhere(matches[j])
+
+        ## update number of samples in batch after m_valid applied
+        nb = np.count_nonzero(m_valid)
+        ## just return if no valid samples in this batch
+        if nb==0:
+            return self
+        sixs = sixs[m_valid]
+
+        ## extract valid data feats and stack to (B,S,F)
+        dfeats = np.stack([
+            self.get_farray(*df, bdict)[m_valid]
+            for df in self._p["data_feats"]
+            ], axis=-1)
+
+        ## reduce the data feats to all but the batch and feature axes
+        red_axes = tuple(set(range(dfeats.ndim))-{0,dfeats.ndim-1})
+        dfeats = REDUCE_FUNCS[self._p["reduce_func"]](dfeats, axis=red_axes)
+
+        ## update the results dictionary
+        for bix in range(nb):
+            six = sixs[bix]
+            self._r["count"][*six] += 1
+            ## on first iteration, set defaults
+            if self._r["count"][*six]==1:
+                if self._p["collect_mean_var"]:
+                    self._r["mean"][*six] = dfeats[bix]
+                    self._r["m2"][*six] = 0.
+                if self._p["collect_min_max"]:
+                    self._r["min"][*six] = defaults[bix]
+                    self._r["max"][*six] = defaults[bix]
+            elif self._p["collect_min_max"]:
+                m_min = self._r["min"][*six] > dfeats[bix]
+                if np.any(m_min):
+                    self._r["min"][m_min] = dfeats[bix][m_min]
+                m_max = self._r["max"][*six] < dfeats[bix]
+                if np.any(m_max):
+                    self._r["max"][m_max] = dfeats[bix][m_max]
+            ## welford's algorithm
+            if self._p["collect_mean_var"]:
+                d_1 = dfeats[bix] - self._r["mean"][*six]
+                self._r["mean"][*six] += d_1 / self._r["count"][*six]
+                d_2 = dfeats[bix] - self._r["mean"][*six]
+                self._r["m2"][*six] += d_1 * d_2 ## sum of squares of diffs
+        return self
+
+    def final_results(self):
+        """ """
+        ## can't calculate variance of only one value
+        results = {}
+        m_valid = (self._r["count"] > 1)
+        c = np.where(m_valid, self._r["count"], np.nan)
+        m_valid = m_valid[...,None]
+        results["mean"] = np.where(m_valid, self._r["mean"], np.nan)
+        results["min"] = np.where(m_valid, self._r["min"], np.nan)
+        results["max"] = np.where(m_valid, self._r["max"], np.nan)
+        results["m2"] = np.where(m_valid, self._r["m2"], np.nan)
+        results["var"] = results["m2"] / c[...,None]
+        results["count"] = c.astype(int)
+        return results
+
 class EvalJointHist(Evaluator):
     """
     Develop a joint histogram(s) with an arbitrary number of axes having
@@ -225,8 +384,6 @@ class EvalJointHist(Evaluator):
     :@param round_oob: If True, values that are out of bounds will be rounded
         to the nearest valid bin rather than discarded.
     """
-    #_required = ["vidx_feat", "hidx_feat", "time_feat", "cov_feats",
-    #        "cov_reduce_metric", "cov_reduce_axes"]
     _required = ["axis_feats", "axis_params", "cov_feats", "hist_conditions",
             "round_oob"]
     def __init__(self, params:dict, feats:dict,
@@ -383,7 +540,6 @@ class EvalJointHist(Evaluator):
         results = {"counts":[], "cov_mean":[], "cov_var":[],
             "hist_coords":self._hcoords, "hist_diffs":self._hdiffs}
         for i in range(len(self._r["counts"])):
-            print(self._r["counts"][i].shape)
             m_valid = (self._r["counts"][i] > 1)
             #c = self._r["counts"][i]
             #c[~m_valid] = np.nan
@@ -612,6 +768,21 @@ class EvalTemporal(Evaluator):
         v = np.where(m_valid, self._r["m2"]/self._r["count"], np.nan)
         s = np.where(m_valid, self._r["m2"]/(self._r["count"]-1), np.nan)
         return { "count":c, "mean":m, "var":v, "svar":s }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 class EvalGridAxes(Evaluator):
     """
@@ -917,8 +1088,8 @@ EVALUATORS = {
         "EvalTemporal":EvalTemporal,
         "EvalSampleSources":EvalSampleSources,
         "EvalJointHist":EvalJointHist,
+        "EvalStatic":EvalStatic,
         #"EvalHorizon":EvalHorizon,
-        #"EvalStatic":EvalStatic,
         #"EvalEfficiency":EvalEfficiency,
         #"EvalGridAxes":EvalGridAxes,
         }

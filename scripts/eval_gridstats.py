@@ -144,7 +144,7 @@ if __name__=="__main__":
     print(timegrids)
 
     ## generate the gridstat hdf5 from timegrid hdf5s
-    #'''
+    '''
     make_gridstat_hdf5(
             timegrids=timegrids,
             out_file=gs_path,
@@ -154,9 +154,9 @@ if __name__=="__main__":
             nworkers=16,
             debug=True,
             )
-    #'''
+    '''
 
-    exit(0)
+    #exit(0)
 
     ## generate the gridhist hdf5 from timegrid hdf5s
     '''
@@ -201,7 +201,8 @@ if __name__=="__main__":
                 #"vmax":[*[era5_info["hist-bounds"][l][1]]*3,None
                 #    ] if l not in exclude_bounds else [None]*4,
                 #"vmax":[era5_info["hist-bounds"][l][1]]*3+[None],
-                "title":era5_info["desc-mapping"][l],
+                #"title":era5_info["desc-mapping"][l],
+                "title":l,
                 "cbar_orient":"horizontal",
                 "cmap":"nipy_spectral",
                 "norm":["linear","symlog"][l in logscale],
