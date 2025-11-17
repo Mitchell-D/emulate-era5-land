@@ -37,7 +37,7 @@ eval_options = {
             "defaults":{
                 "axis_feats":[
                     ("target","diff swm-7"), ("pred","diff swm-7")],
-                "axis_params":[(-.1,.1,256),(-.1,.1,256)],
+                "axis_params":[(-.001,.001,256),(-.1,.1,256)],
                 "round_oob":True,
                 },
             },
@@ -46,7 +46,7 @@ eval_options = {
             "defaults":{
                 "axis_feats":[
                     ("target","diff swm-28"), ("pred","diff swm-28")],
-                "axis_params":[(-.05,.05,256),(-.05,.05,256)],
+                "axis_params":[(-.0005,.0005,256),(-.05,.05,256)],
                 "round_oob":True,
                 },
             },
@@ -55,7 +55,7 @@ eval_options = {
             "defaults":{
                 "axis_feats":[
                     ("target","diff swm-100"), ("pred","diff swm-100")],
-                "axis_params":[(-.02,.02,256),(-.02,.02,256)],
+                "axis_params":[(-.0002,.0002,256),(-.02,.02,256)],
                 "round_oob":True,
                 },
             },
@@ -64,7 +64,7 @@ eval_options = {
             "defaults":{
                 "axis_feats":[
                     ("target","diff swm-289"), ("pred","diff swm-289")],
-                "axis_params":[(-.01,.01,256),(-.01,.01,256)],
+                "axis_params":[(-.0001,.0001,256),(-.01,.01,256)],
                 "round_oob":True,
                 },
             },
@@ -112,7 +112,7 @@ eval_options = {
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-7"), ("target","diff swm-7")],
-                "axis_params":[(0,.8,256),(-.01,.01,256)],
+                "axis_params":[(0,.8,256),(-.001,.001,256)],
                 "round_oob":True,
                 },
             },
@@ -120,7 +120,7 @@ eval_options = {
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-28"), ("target","diff swm-28")],
-                "axis_params":[(0,.8,256),(-.005,.005,256)],
+                "axis_params":[(0,.8,256),(-.0005,.0005,256)],
                 "round_oob":True,
                 },
             },
@@ -128,7 +128,7 @@ eval_options = {
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-100"), ("target","diff swm-100")],
-                "axis_params":[(0,.8,256),(-.001,.001,256)],
+                "axis_params":[(0,.8,256),(-.0001,.0001,256)],
                 "round_oob":True,
                 },
             },
@@ -136,7 +136,7 @@ eval_options = {
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-289"), ("target","diff swm-289")],
-                "axis_params":[(0,.8,256),(-.0005,.0005,256)],
+                "axis_params":[(0,.8,256),(-.00005,.00005,256)],
                 "round_oob":True,
                 },
             },
@@ -341,8 +341,9 @@ if __name__=="__main__":
         (EJH, "state-diff-swm-28", "err-diff",
             [[df_diff_err_bias[1],df_diff_err_abs[1]], []]),
 
-        (EJH, "tmp-dwpt", "err-diff",
-            [[*df_diff_err_bias,*df_diff_err_abs], []]),
+        (EJH, "tmp-dwpt", "err-diff", [[
+            df_diff_err_bias[0],df_diff_err_abs[0],
+            df_intg_err_bias[0],df_intg_err_abs[0]], []]),
         (EJH, "tmp-snow", "err-diff",
             [[df_diff_err_bias[0],df_diff_err_abs[0]], []]),
         (EJH, "trsp-evp", "err-diff",

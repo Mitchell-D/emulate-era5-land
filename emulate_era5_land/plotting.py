@@ -1308,31 +1308,36 @@ def plot_geo_ints(int_data, lat, lon, geo_bounds=None, latlon_ticks=True,
 def plot_joint_hist_and_cov(
         counts, ax1_params, ax2_params, covariate=None,
         show_ticks=True, plot_covariate=False,
-        separate_covariate_axes=False, plot_diagonal=False,
+        separate_covariate_axes=True, plot_diagonal=False,
         normalize_counts=False, fig_path=None, nan_to_value=np.nan,
-        cov_contour_levels=None, show=False, use_imshow=False,
-        plot_spec={}):
+        cov_contour_levels=None, show=False, plot_spec={}):
     """
     :@param counts: (H1, H2) array of integer counts
     :@param ax*_params: (min, max, res) for each axis' coordinates
     :@param covariate: (H1, H2) array of covariate values
     """
     # Merge provided plot_spec with un-provided default values
-    old_ps = {
-            "cmap":"nipy_spectral", "cb_size":1, "cb_orient":"vertical",
-            "norm":"linear", "cov_levels":8, "cov_colors":None,
+    ps = {
+            "cmap":"nipy_spectral", "cb_size":.85, "cb_orient":"vertical",
+            "cb_pad":.02, "norm":"linear", "cov_levels":8, "cov_colors":None,
             "cov_linewidth":2, "cov_linestyles":"solid",
             "cov_cmap":"plasma", "cov_negative_linestyles":None,
-            "xscale":"linear", "yscale":"linear",
-            "contour_fontsize":"medium"
+            "xscale":"linear", "yscale":"linear", "grid":True,
+            "contour_fontsize":"medium", "text_size":12,"label_size":10,
+            "title_size":14, "dpi":200,
             }
-    old_ps.update(plot_spec)
-    plot_spec = old_ps
+    ps.update(plot_spec)
+
+    if not ps.get("fig_size"):
+        if plot_covariate and separate_covariate_axes:
+            ps["fig_size"] = (18,8)
+        else:
+            ps["fig_size"] = (10,8)
 
     plot_covariate = plot_covariate and not covariate is None
 
-    if plot_spec.get("text_size"):
-        plt.rcParams.update({"font.size":plot_spec["text_size"]})
+    if ps.get("text_size"):
+        plt.rcParams.update({"font.size":ps["text_size"]})
 
     if covariate is None or not separate_covariate_axes:
         fig, ax = plt.subplots()
@@ -1350,152 +1355,141 @@ def plot_joint_hist_and_cov(
 
     heatmap[np.logical_not(np.isfinite(heatmap))] = nan_to_value
 
-    if plot_diagonal:
-        ax.plot((0,heatmap.shape[1]-1), (0,heatmap.shape[0]-1),
-                linewidth=plot_spec.get("line_width"))
     y,x = np.meshgrid(
             np.linspace(*ax1_params),
             np.linspace(*ax2_params)
             )
     cov_plot = None
-    if use_imshow:
-        extent = (*ax2_params[:2], *ax1_params[:2])
-        im = ax.imshow(
-                heatmap,
-                cmap=plot_spec.get("cmap"),
-                vmax=plot_spec.get("vmax"),
-                extent=extent,
-                norm=plot_spec.get("norm"),
-                origin="lower",
-                aspect=plot_spec.get("aspect")
-                )
-        if plot_covariate \
-                and not covariate is None \
-                and separate_covariate_axes:
-            cov_plot = ax.imshow(
-                    cov,
-                    cmap=plot_spec.get("cov_cmap"),
-                    extent=extent,
-                    origin="lower",
-                    norm=plot_spec.get("cov_norm", "linear"),
-                    aspect=plot_spec.get("aspect"),
-                    vmax=plot_spec.get("cov_vmax"),
-                    vmin=plot_spec.get("cov_vmin"),
-                    )
-            cov_cbar = fig.colorbar(
-                    cov_plot,
-                    orientation=plot_spec.get("cb_orient"),
-                    label=plot_spec.get("cov_cb_label", ""),
-                    shrink=plot_spec.get("cb_size", None),
-                    )
-    else:
-        im = ax.pcolormesh(
-                x, y, heatmap.T,
-                cmap=plot_spec.get("cmap"),
-                vmax=plot_spec.get("vmax"),
-                norm=plot_spec.get("norm"),
-                )
-        if plot_covariate \
-                and not covariate is None \
-                and separate_covariate_axes:
+
+    im = ax.pcolormesh(
+            x, y, heatmap.T,
+            cmap=ps.get("cmap"),
+            vmax=ps.get("vmax"),
+            norm=ps.get("norm"),
+            )
+    cbar = fig.colorbar(
+            im, orientation=ps.get("cb_orient"),
+            label=ps.get("cb_label"),
+            shrink=ps.get("cb_size"),
+            pad=ps.get("cb_pad"),
+            )
+    if plot_covariate and not covariate is None and separate_covariate_axes:
+        if separate_covariate_axes:
             cov_plot = cov_ax.pcolormesh(
                     x, y, covariate.T,
-                    cmap=plot_spec.get("cov_cmap"),
-                    norm=plot_spec.get("cov_norm", "linear"),
-                    ## dumb shit ik but can't default to None
-                    #**{k:plot_spec[v] for k,v in \
-                    #        [("vmin","cov_vmin"),("vmax","cov_vmax")]
-                    #        if v in plot_spec.keys()
-                    #        }
-                    vmin=plot_spec.get("cov_vmin"),
-                    vmax=plot_spec.get("cov_vmax"),
+                    cmap=ps.get("cov_cmap"),
+                    norm=ps.get("cov_norm", "linear"),
+                    vmin=ps.get("cov_vmin"),
+                    vmax=ps.get("cov_vmax"),
                     )
             cov_cbar = fig.colorbar(
                     cov_plot,
-                    orientation=plot_spec.get("cb_orient"),
-                    label=plot_spec.get("cov_cb_label", ""),
-                    shrink=plot_spec.get("cb_size", None),
-                    pad=plot_spec.get("cb_pad", .02),
+                    orientation=ps.get("cb_orient"),
+                    label=ps.get("cov_cb_label", ""),
+                    shrink=ps.get("cb_size"),
+                    pad=ps.get("cb_pad"),
                     )
-    cbar = fig.colorbar(
-            im, orientation=plot_spec.get("cb_orient"),
-            label=plot_spec.get("cb_label"),
-            shrink=plot_spec.get("cb_size")
-            )
-    if plot_covariate \
-            and not covariate is None \
-            and not separate_covariate_axes:
-        print(covariate.shape)
-        cov_plot = ax.contour(
-                x, y, covariate.T,
-                levels=plot_spec.get("cov_levels"),
-                colors=plot_spec.get("cov_colors"),
-                cmap=plot_spec.get("cov_cmap"),
-                linewidths=plot_spec.get("cov_linewidth"),
-                negative_linestyles=plot_spec.get(
-                    "cov_negative_linestyles"),
-                )
-        ax.clabel(cov_plot, fontsize=plot_spec.get("contour_fontsize"))
+        else:
+            cov_plot = ax.contour(
+                    x, y, covariate.T,
+                    levels=ps.get("cov_levels"),
+                    colors=ps.get("cov_colors"),
+                    cmap=ps.get("cov_cmap"),
+                    linewidths=ps.get("cov_linewidth"),
+                    negative_linestyles=ps.get(
+                        "cov_negative_linestyles"),
+                    )
+            ax.clabel(cov_plot, fontsize=ps.get("contour_fontsize"))
+            cov_cbar = None
+
     if not show_ticks:
         plt.tick_params(axis="x", which="both", bottom=False,
                         top=False, labelbottom=False)
         plt.tick_params(axis="y", which="both", bottom=False,
                         top=False, labelbottom=False)
 
-    if plot_spec.get("xlim"):
-        ax.set_xlim(*plot_spec.get("xlim"))
+    if ps.get("xlim"):
+        ax.set_xlim(*ps.get("xlim"))
         if cov_ax:
-            cov_ax.set_xlim(*plot_spec.get("xlim"))
+            cov_ax.set_xlim(*ps.get("xlim"))
     else:
         ax.set_xlim(*ax2_params[:2])
         if cov_ax:
             cov_ax.set_xlim(*ax2_params[:2])
-    if plot_spec.get("ylim"):
-        ax.set_ylim(plot_spec.get("ylim"))
+    if ps.get("ylim"):
+        ax.set_ylim(ps.get("ylim"))
         if cov_ax:
-            cov_ax.set_ylim(plot_spec.get("ylim"))
+            cov_ax.set_ylim(ps.get("ylim"))
     else:
         ax.set_ylim(*ax1_params[:2])
         if cov_ax:
             cov_ax.set_ylim(*ax1_params[:2])
 
+    if ps.get("aspect"):
+        ax.set_aspect(ps.get("aspect"))
+        if cov_ax:
+            cov_ax.set_aspect(ps.get("aspect"))
+
     if not cov_plot is None and not cov_ax is None:
-        cov_ax.set_xlabel(plot_spec.get("xlabel", ""))
-        cov_ax.set_ylabel(plot_spec.get("ylabel", ""))
+        cov_ax.set_xlabel(ps.get("xlabel", ""))
+        cov_ax.set_ylabel(ps.get("ylabel", ""))
 
-    #fig.suptitle(plot_spec.get("title"))
-    fig.suptitle(plot_spec.get("title"))
-    ax.set_title(plot_spec.get("hist_title"))
+    fig.suptitle(ps.get("title"),
+            fontsize=ps.get("suptitle_size"))
+    ax.set_title(ps.get("hist_title"),
+            fontsize=ps.get("title_size"))
+
     if cov_ax:
-        cov_ax.set_title(plot_spec.get("cov_title"))
-    ax.set_xlabel(plot_spec.get("xlabel"))
-    ax.set_ylabel(plot_spec.get("ylabel"))
-    ax.set_yscale(plot_spec.get("yscale"))
-    ax.set_xscale(plot_spec.get("xscale"))
-    if plot_spec.get("aspect"):
-        ax.set_box_aspect(plot_spec["aspect"])
-    if plot_covariate \
-            and not covariate is None \
-            and separate_covariate_axes:
-        #cov_ax.set_title(plot_spec.get("cov_title", ""))
-        cov_ax.set_xlabel(plot_spec.get("cov_xlabel", ""))
-        cov_ax.set_ylabel(plot_spec.get("cov_ylabel", ""))
-        if plot_spec.get("aspect"):
-            cov_ax.set_box_aspect(plot_spec["aspect"])
+        cov_ax.set_title(ps.get("cov_title"), fontsize=ps.get("title_size"))
 
-    if not plot_spec.get("x_ticks") is None:
-        ax.set_xticks(plot_spec.get("x_ticks"))
-    if not plot_spec.get("y_ticks") is None:
-        ax.set_yticks(plot_spec.get("y_ticks"))
+    ax.set_xlabel(ps.get("xlabel"),
+            fontsize=ps.get("label_size"))
+    ax.set_ylabel(ps.get("ylabel"),
+            fontsize=ps.get("label_size"))
+    ax.set_yscale(ps.get("yscale"))
+    ax.set_xscale(ps.get("xscale"))
+
+    if ps.get("aspect"):
+        ax.set_box_aspect(ps["aspect"])
+
+    if plot_covariate and not covariate is None and separate_covariate_axes:
+        cov_ax.set_xlabel(ps.get("cov_xlabel", ""),
+                fontsize=ps.get("label_size"))
+        cov_ax.set_ylabel(ps.get("cov_ylabel", ""),
+                fontsize=ps.get("label_size"))
+        if ps.get("aspect"):
+            cov_ax.set_box_aspect(ps["aspect"])
+
+    if plot_diagonal:
+        ax.plot(ax.get_xlim(), ax.get_ylim(),
+            linewidth=ps.get("diagonal_width"),
+            color=ps.get("diagonal_color"))
+        if not cov_plot is None and not cov_ax is None:
+            cov_ax.plot(cov_ax.get_xlim(), cov_ax.get_ylim(),
+                linewidth=ps.get("diagonal_width"),
+                color=ps.get("diagonal_color"))
+
+    if not ps.get("x_ticks") is None:
+        ax.set_xticks(ps.get("x_ticks"))
+    if not ps.get("y_ticks") is None:
+        ax.set_yticks(ps.get("y_ticks"))
+
+    if ps.get("grid"):
+        ax.set_axisbelow(True)
+        ax.grid()
+        if not cov_ax is None:
+            cov_ax.set_axisbelow(True)
+            cov_ax.grid()
+
     if show:
         plt.show()
     if not fig_path is None:
-        if plot_spec.get("fig_size"):
-            fig.set_size_inches(plot_spec["fig_size"])
+        if ps.get("fig_size"):
+            fig.set_size_inches(ps["fig_size"])
         fig.savefig(
                 fig_path.as_posix(),
-                dpi=plot_spec.get("dpi", 200),
-                bbox_inches=plot_spec.get("bbox_inches")
+                dpi=ps.get("dpi"),
+                bbox_inches=ps.get("bbox_inches")
                 )
         print(f"Generated {fig_path.as_posix()}")
     plt.close()

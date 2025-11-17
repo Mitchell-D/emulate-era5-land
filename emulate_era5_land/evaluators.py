@@ -6,6 +6,8 @@ from datetime import datetime,timezone
 from typing import Callable
 from pathlib import Path
 
+from emulate_era5_land.plotting import plot_joint_hist_and_cov
+
 REDUCE_FUNCS = {"min":np.amin, "mean":np.average, "max":np.amax, "sum":np.sum}
 
 def get_epoch_to_index_func(include_year=False):
@@ -556,7 +558,8 @@ class EvalJointHist(Evaluator):
         return results
 
     def plot(self, plot_type:str="hist-cov", axis_feats=None, cov_feats=None,
-            hist_idx=0, plot_spec={}, plot_params={}):
+            hist_idx=0, cov_metric=None, fig_path=None, plot_spec={},
+            plot_params={}, show=False):
         """
         Plot EvalJointHist data.
 
@@ -574,14 +577,20 @@ class EvalJointHist(Evaluator):
             for formatting
         :@param plot_params: Arguments passed to the
         """
-        fr = ev.final_results()
+        fr = self.final_results()
         #cov = None if not fr["cov_mean"] else fr["cov_mean"][0][...,0]
 
         ## Make sure all the features are valid in the label dict
         if not axis_feats is None:
-            assert all(f in self._p["axis_feats"] for f in axis_feats)
+            assert all(f in self._p["axis_feats"] for f in axis_feats), \
+                f"\nTrying to generate: {fig_path.name}" + \
+                f"\nProvided cov feats: {cov_feats}" + \
+                f"\nValid axis feats:\n{list(self._p['axis_feats'])} "
         if not cov_feats is None:
-            assert all(f in self._p["cov_feats"] for f in cov_feats)
+            assert all(f in self._p["cov_feats"] for f in cov_feats), \
+                f"\nTrying to generate: {fig_path.name}" + \
+                f"\nProvided cov feats:\n{cov_feats}" + \
+                f"\nValid cov feats:\n{list(self._p['cov_feats'])} "
 
         if plot_type == "hist":
             if axis_feats is None:
@@ -589,23 +598,18 @@ class EvalJointHist(Evaluator):
                 axis_feats = self._p["axis_feats"][:2]
             assert len(axis_feats)==2
 
-            ffields = [*p.stem.split("_"), plot_type,
-                    "_".join(axis_feats[0]),
-                    "_".join(axis_feats[1]),
-                    ]
-            fig_path = fig_dir.joinpath("_".join(ffields)+".png")
-
             ## sum over all axes other than the selected ones.
             ix_ax1 = self._p["axis_feats"].index(axis_feats[0])
             ix_ax2 = self._p["axis_feats"].index(axis_feats[1])
             sum_axes = set(range(fr["counts"][hist_idx].ndim))-{ix_ax1,ix_ax2}
-            c = np.sum(fr["counts"][hist_idx], axis=sum_axes)
+            c = np.sum(fr["counts"][hist_idx], axis=tuple(sum_axes))
             plot_joint_hist_and_cov(
                     counts=c,
                     ax1_params=self._p["axis_params"][ix_ax1],
                     ax2_params=self._p["axis_params"][ix_ax2],
                     plot_covariate=False,
                     fig_path=fig_path,
+                    show=show,
                     separate_covariate_axes=False,
                     plot_spec=plot_spec,
                     **plot_params,
@@ -618,29 +622,30 @@ class EvalJointHist(Evaluator):
             if cov_feats is None:
                 assert len(self._p["cov_feats"]>=1)
                 cov_feats = [self._p["cov_feats"][0]]
+            assert cov_metric in ["cov_mean", "cov_var", "cov_stddev"], \
+                    f"covariate metric must be specified"
             assert len(axis_feats)==2
-
-            ffields = [*p.stem.split("_"), plot_type,
-                    "_".join(axis_feats[0]),
-                    "_".join(axis_feats[1]),
-                    "_".join(cov_feats[0]),
-                    ]
-            fig_path = fig_dir.joinpath("_".join(ffields)+".png")
 
             ## sum over all axes other than the selected ones.
             ix_ax1 = self._p["axis_feats"].index(axis_feats[0])
             ix_ax2 = self._p["axis_feats"].index(axis_feats[1])
-            ix_cov = self._p["cov_feats"].index(axis_feats[1])
+            ix_cov = self._p["cov_feats"].index(cov_feats[0])
             sum_axes = set(range(fr["counts"][hist_idx].ndim))-{ix_ax1,ix_ax2}
-            c = np.sum(fr["counts"][hist_idx], axis=sum_axes)
+            c = np.sum(fr["counts"][hist_idx], axis=tuple(sum_axes))
+            if cov_metric=="cov_stddev":
+                var = np.where(c>1,fr["cov_var"][hist_idx][...,ix_cov],np.nan)
+                cov = var**0.5
+            else:
+                cov = np.where(c>1,fr[cov_metric][hist_idx][...,ix_cov],np.nan)
             plot_joint_hist_and_cov(
                     counts=c,
                     ax1_params=self._p["axis_params"][ix_ax1],
                     ax2_params=self._p["axis_params"][ix_ax2],
                     ## expand to others eventually
-                    covariate=self._r["cov_mean"][hist_idx][...,ix_cov],
+                    covariate=cov,
                     plot_covariate=True,
                     fig_path=fig_path,
+                    show=show,
                     separate_covariate_axes=True,
                     plot_spec=plot_spec,
                     **plot_params,
