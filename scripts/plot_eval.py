@@ -17,36 +17,53 @@ from emulate_era5_land.plotting import plot_lines_multiy
 from emulate_era5_land.plotting import plot_lines_and_heatmap_split
 from emulate_era5_land.plotting import plot_joint_hist_and_cov
 
-conf = {
-    "EvalTemporal":{"temporal":{
-        "diff-all":{"f":plot_lines_multiy, "ps":{}},
-        "intg-all":{"f":plot_lines_multiy, "ps":{}},
-        }},
-    "EvalSampleSources":{
-        "spatial":{
-            "doy":{"f":plot_geo_scalar},
-            "count":{"f":plot_geo_scalar},
-            },
-        "temporal":{
-            "doy":{"f":plot_heatmap, "ps":{}},
-            "all":{"f":plot_heatmap, "ps":{}},
-            },
-        },
+plot_config = {
     "EvalJointHist":{
-        "hist-vc-swm-7":{"counts":{"f":plot_heatmap, "ps":{}}},
-        "hist-vc-swm-28":{"counts":{"f":plot_heatmap, "ps":{}}},
-        "hist-vc-swm-100":{"counts":{"f":plot_heatmap, "ps":{}}},
-        "hist-vc-swm-289":{"counts":{"f":plot_heatmap, "ps":{}}},
+        ## temperature/dewpoint curve
+        "tmp-dwpt":{"err-all":[
+            ## swm-7 absolute error
+            {"plot_type":"hist-cov",
+                "cov_feats":[("err-abs","swm-7")],
+                "plot_spec":{
+                    "hist_title":"swm-7 MAE wrt temperature and dewpoint",
+                    "xlabel":"Dewpoint (K)", "ylabel":"Temperature (K)",
+                    "cov_title":"Mean Absolute Error in 0-7cm Layer"
+                    }},
 
-        "hist-diff-swm-7":{"err-all":{"f":plot_heatmap, "ps":{}}},
-        "hist-diff-swm-28":{"err-all":{"f":plot_heatmap, "ps":{}}},
-        "hist-diff-swm-100":{"err-all":{"f":plot_heatmap, "ps":{}}},
-        "hist-diff-swm-289":{"err-all":{"f":plot_heatmap, "ps":{}}},
+            ## swm-7 error bias
+            {"plot_type":"hist-cov",
+                "cov_feats":[("err-bias","swm-7")],
+                "plot_spec":{}},
 
-        "hist-tmp-dwpt":{"err-all":{"f":plot_heatmap, "ps":{}}},
-        "hist-tmp-snow":{"err-all":{"f":plot_heatmap, "ps":{}}},
-        "hist-trsp-evp":{"err-all":{"f":plot_heatmap, "ps":{}}},
-        },
+            ## swm-28 absolute error
+            {"plot_type":"hist-cov",
+                "cov_feats":[("err-abs","swm-28")],
+                "plot_spec":{}},
+
+            ## swm-28 error bias
+            {"plot_type":"hist-cov",
+                "cov_feats":[("err-bias","swm-28")],
+                "plot_spec":{}},
+            ]},
+
+        ## swm-7 differential validation curve
+        "diff-swm-7":{"counts":[
+            {"plot_type":"hist", "plot_spec":{}},
+            ]},
+
+        ## true state and increment change histogram w error covariance
+        "state-diff-swm-7":{"counts":[
+            ## error bias
+            {"plot_type":"hist-cov",
+                "cov_feats":[("err-bias","swm-7")],
+                "plot_spec":{}},
+
+            ## absolute error
+            {"plot_type":"hist-cov",
+                "cov_feats":[("err-abs","swm-7")],
+                "plot_spec":{}},
+            ]},
+        }
     }
 
 if __name__=="__main__":
@@ -56,53 +73,71 @@ if __name__=="__main__":
     fig_dir = proj_root.joinpath("figures/eval")
     eval_dir = proj_root.joinpath("data/eval")
 
-    #model_names = [f"acclstm-era5-swm-{mn}" for mn in range(37,66)
-    #        if mn not in [46, 42, 43]] ## don't have layer-wise error
-    #model_names = ["acclstm-era5-swm-50"]
-
     ## evaluators can be organized by:
     ## (subdomain, model, eval_type, eval_preset, eval_instance)
     ## since each evaluator type can have multiple presets, and presets
     ## can by applied to multiple different instance types.
     plot_models = [
-        "acclstm-era5-swm-64",
+        "acclstm-era5-swm-9",
         "acclstm-era5-swm-50",
+        "acclstm-era5-swm-64",
         ]
     plot_subdomains = [
-        "test-full"
+        "full"
         ]
     plot_instances = [ ## (preset, instance)
-        ("temporal", "intg-all"),
-        ("temporal", "err-all"),
-        ("hist-diff-swm-7", "err-all"),
-        ("hist-diff-swm-28", "err-all"),
-        ("hist-diff-swm-100", "err-all"),
-        ("hist-diff-swm-289", "err-all"),
-        ("hist-tmp-twpt", "err-all"),
-        ("hist-tmp-snow", "err-all"),
-        ("hist-trsp-evp", "err-all"),
-        ("hist-vc-swm-7", "counts"),
-        ("hist-vc-swm-28", "counts"),
-        ("hist-vc-swm-100", "counts"),
-        ("hist-vc-swm-289", "counts"),
+        ("EvalSampleSources", "space-time", "none"),
+        ("EvalTemporal", "doy-tod", "intg-all"),
+        ("EvalTemporal", "doy-tod", "diff-all"),
+        ("EvalJointHist", "state-diff-swm-7", "err-diff"),
+        ("EvalJointHist", "state-diff-swm-28", "err-diff"),
+        ("EvalJointHist", "state-diff-swm-100", "err-diff"),
+        ("EvalJointHist", "state-diff-swm-289", "err-diff"),
+        ("EvalJointHist", "swm-7", "counts"),
+        ("EvalJointHist", "swm-28", "counts"),
+        ("EvalJointHist", "swm-100", "counts"),
+        ("EvalJointHist", "swm-289", "counts"),
+        ("EvalJointHist", "tmp-dwpt", "err-diff"),
+        ("EvalJointHist", "tmp-snow", "err-diff"),
+        ("EvalJointHist", "trsp-evp", "err-diff"),
+        ("EvalStatic", "grid", "err-mean"),
+        ("EvalStatic", "grid", "err-max"),
+        ("EvalStatic", "grid", "err-min"),
+        ("EvalStatic", "veg-soil-combo", "err-mean"),
         ]
-    plot_subcats = [
-        "err-all", "counts", "diff-all", "intg-all",
-        ]
-
-
-
-
 
 
     ev_paths = [
         (p,pt) for p,pt in ((q,q.stem.split("_")) for q in eval_dir.iterdir())
         if pt[0]=="eval"
-        and pt[1] in plot_models
-        and pt[2] in plot_instances
-        and pt[3] in plot_subcats
+        and pt[1] in plot_subdomains
+        and pt[2] in plot_models
+        and (pt[3],pt[4],pt[5]) in plot_instances
         ]
 
+    to_plot = []
+    for p in ev_paths:
+        _,subd,model,etype,d1,d2 = p.stem.split("_")
+        if model not in plot_models:
+            print(f"Skipping not in plot_models: {model}")
+            continue
+        if subd not in plot_subdomains:
+            print(f"Skipping not in plot_subdomains: {subd}")
+            continue
+        if (etype,d1,d2) not in plot_instances:
+            print(f"Skipping not in plot_instances: {(etype,d1,d2)}")
+            continue
+        args = plot_config.get(etype,{}).get(d1,{}).get(d2,{})
+        to_plot.append((p, args))
+
+    for p,a in to_plot:
+        ev = evaluators.Evaluator.from_pkl(p)
+        if "plot" not in dir("ev"):
+            print(f"WARNING: `plot` is not implemented for {etype}")
+            continue
+        ev.plot(**a)
+
+    exit(0)
     for p,_ in ev_paths:
         ev = Evaluator.from_pkl(p)
         if ev.evtype=="EvalJointHist":

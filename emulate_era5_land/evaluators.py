@@ -318,15 +318,15 @@ class EvalStatic(Evaluator):
                     self._r["mean"][*six] = dfeats[bix]
                     self._r["m2"][*six] = 0.
                 if self._p["collect_min_max"]:
-                    self._r["min"][*six] = defaults[bix]
-                    self._r["max"][*six] = defaults[bix]
+                    self._r["min"][*six] = dfeats[bix]
+                    self._r["max"][*six] = dfeats[bix]
             elif self._p["collect_min_max"]:
                 m_min = self._r["min"][*six] > dfeats[bix]
                 if np.any(m_min):
-                    self._r["min"][m_min] = dfeats[bix][m_min]
+                    self._r["min"][*six][m_min] = dfeats[bix][m_min]
                 m_max = self._r["max"][*six] < dfeats[bix]
                 if np.any(m_max):
-                    self._r["max"][m_max] = dfeats[bix][m_max]
+                    self._r["max"][*six][m_max] = dfeats[bix][m_max]
             ## welford's algorithm
             if self._p["collect_mean_var"]:
                 d_1 = dfeats[bix] - self._r["mean"][*six]
@@ -384,8 +384,10 @@ class EvalJointHist(Evaluator):
     :@param round_oob: If True, values that are out of bounds will be rounded
         to the nearest valid bin rather than discarded.
     """
+    ## required parameters
     _required = ["axis_feats", "axis_params", "cov_feats", "hist_conditions",
             "round_oob"]
+    _plot_types = ["hist-cov"] ## supported plot names
     def __init__(self, params:dict, feats:dict,
             results:dict=None, meta:dict={}):
         """ See superclass initializer. """
@@ -552,6 +554,97 @@ class EvalJointHist(Evaluator):
                 results["cov_mean"].append(m)
                 results["cov_var"].append(v)
         return results
+
+    def plot(self, plot_type:str="hist-cov", axis_feats=None, cov_feats=None,
+            hist_idx=0, plot_spec={}, plot_params={}):
+        """
+        Plot EvalJointHist data.
+
+        :@param plot_type: String representing the type of plot (ie the
+            purpose of the feature/covariate/histogram chosen)
+        :@param axis_feats: List of 2-tuple (dataset, feat) axis features to
+            plot. The number of axis features needed depends on the plot type.
+        :@param cov_feats: List of 2-tuple (dataset, feat) covariate features
+            to plot. The number of features needed depends on the plot type,
+        :@param hist_idx: the index of the histogram to use. Each index
+            corresponds to a unique hist_conditions method used to select
+            samples to include. If no hist_conditions were applied, keep the
+            default value of zero.
+        :@param plot_spec: plot_spec dict to supply to the plotting method
+            for formatting
+        :@param plot_params: Arguments passed to the
+        """
+        fr = ev.final_results()
+        #cov = None if not fr["cov_mean"] else fr["cov_mean"][0][...,0]
+
+        ## Make sure all the features are valid in the label dict
+        if not axis_feats is None:
+            assert all(f in self._p["axis_feats"] for f in axis_feats)
+        if not cov_feats is None:
+            assert all(f in self._p["cov_feats"] for f in cov_feats)
+
+        if plot_type == "hist":
+            if axis_feats is None:
+                assert len(self._p["axis_feats"])>=2
+                axis_feats = self._p["axis_feats"][:2]
+            assert len(axis_feats)==2
+
+            ffields = [*p.stem.split("_"), plot_type,
+                    "_".join(axis_feats[0]),
+                    "_".join(axis_feats[1]),
+                    ]
+            fig_path = fig_dir.joinpath("_".join(ffields)+".png")
+
+            ## sum over all axes other than the selected ones.
+            ix_ax1 = self._p["axis_feats"].index(axis_feats[0])
+            ix_ax2 = self._p["axis_feats"].index(axis_feats[1])
+            sum_axes = set(range(fr["counts"][hist_idx].ndim))-{ix_ax1,ix_ax2}
+            c = np.sum(fr["counts"][hist_idx], axis=sum_axes)
+            plot_joint_hist_and_cov(
+                    counts=c,
+                    ax1_params=self._p["axis_params"][ix_ax1],
+                    ax2_params=self._p["axis_params"][ix_ax2],
+                    plot_covariate=False,
+                    fig_path=fig_path,
+                    separate_covariate_axes=False,
+                    plot_spec=plot_spec,
+                    **plot_params,
+                    )
+
+        if plot_type == "hist-cov":
+            if axis_feats is None:
+                assert len(self._p["axis_feats"])>=2
+                axis_feats = self._p["axis_feats"][:2]
+            if cov_feats is None:
+                assert len(self._p["cov_feats"]>=1)
+                cov_feats = [self._p["cov_feats"][0]]
+            assert len(axis_feats)==2
+
+            ffields = [*p.stem.split("_"), plot_type,
+                    "_".join(axis_feats[0]),
+                    "_".join(axis_feats[1]),
+                    "_".join(cov_feats[0]),
+                    ]
+            fig_path = fig_dir.joinpath("_".join(ffields)+".png")
+
+            ## sum over all axes other than the selected ones.
+            ix_ax1 = self._p["axis_feats"].index(axis_feats[0])
+            ix_ax2 = self._p["axis_feats"].index(axis_feats[1])
+            ix_cov = self._p["cov_feats"].index(axis_feats[1])
+            sum_axes = set(range(fr["counts"][hist_idx].ndim))-{ix_ax1,ix_ax2}
+            c = np.sum(fr["counts"][hist_idx], axis=sum_axes)
+            plot_joint_hist_and_cov(
+                    counts=c,
+                    ax1_params=self._p["axis_params"][ix_ax1],
+                    ax2_params=self._p["axis_params"][ix_ax2],
+                    ## expand to others eventually
+                    covariate=self._r["cov_mean"][hist_idx][...,ix_cov],
+                    plot_covariate=True,
+                    fig_path=fig_path,
+                    separate_covariate_axes=True,
+                    plot_spec=plot_spec,
+                    **plot_params,
+                    )
 
 class EvalSampleSources(Evaluator):
     """

@@ -13,8 +13,7 @@ from emulate_era5_land.helpers import np_collate_fn
 
 ## configuration system for evaluator objects
 eval_options = {
-        "temporal":{
-            "eval_type":"EvalTemporal",
+        ("EvalTemporal","doy-tod"):{
             "manual_args":["eval_feats"],
             "defaults":{
                  "batch_axis":0, "reduce_func":None,
@@ -22,8 +21,7 @@ eval_options = {
                  "time_slice":"horizon",
                 },
             },
-        "sample-sources":{
-            "eval_type":"EvalSampleSources",
+        ("EvalSampleSources","space-time"):{
             "manual_args":[],
             "defaults":{
                 "vidx_feat":("auxs", "vidxs"),
@@ -34,8 +32,43 @@ eval_options = {
                 "cov_reduce_axes":(1,),
                 },
             },
-        "hist-vc-swm-7":{ ## validation curve histograms
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","diff-swm-7"):{
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[
+                    ("target","diff swm-7"), ("pred","diff swm-7")],
+                "axis_params":[(-.1,.1,256),(-.1,.1,256)],
+                "round_oob":True,
+                },
+            },
+        ("EvalJointHist","diff-swm-28"):{
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[
+                    ("target","diff swm-28"), ("pred","diff swm-28")],
+                "axis_params":[(-.05,.05,256),(-.05,.05,256)],
+                "round_oob":True,
+                },
+            },
+        ("EvalJointHist","diff-swm-100"):{
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[
+                    ("target","diff swm-100"), ("pred","diff swm-100")],
+                "axis_params":[(-.02,.02,256),(-.02,.02,256)],
+                "round_oob":True,
+                },
+            },
+        ("EvalJointHist","diff-swm-289"):{
+            "manual_args":["cov_feats", "hist_conditions"],
+            "defaults":{
+                "axis_feats":[
+                    ("target","diff swm-289"), ("pred","diff swm-289")],
+                "axis_params":[(-.01,.01,256),(-.01,.01,256)],
+                "round_oob":True,
+                },
+            },
+        ("EvalJointHist","swm-7"):{ ## validation curve histograms
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-7"), ("pred","swm-7")],
@@ -43,8 +76,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-vc-swm-28":{ ## validation curve histograms
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","swm-28"):{ ## validation curve histograms
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-28"), ("pred","swm-28")],
@@ -52,8 +84,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-vc-swm-100":{ ## validation curve histograms
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","swm-100"):{ ## validation curve histograms
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-100"), ("pred","swm-100")],
@@ -61,8 +92,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-vc-swm-289":{ ## validation curve histograms
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","swm-289"):{ ## validation curve histograms
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-289"), ("pred","swm-289")],
@@ -70,8 +100,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-tmp-dwpt":{
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","tmp-dwpt"):{
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("horizon","tmp"), ("horizon","dwpt")],
@@ -79,8 +108,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-diff-swm-7":{
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","state-diff-swm-7"):{
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-7"), ("target","diff swm-7")],
@@ -88,8 +116,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-diff-swm-28":{
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","state-diff-swm-28"):{
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-28"), ("target","diff swm-28")],
@@ -97,8 +124,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-diff-swm-100":{
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","state-diff-swm-100"):{
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-100"), ("target","diff swm-100")],
@@ -106,8 +132,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-diff-swm-289":{
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","state-diff-swm-289"):{
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("target","swm-289"), ("target","diff swm-289")],
@@ -115,8 +140,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-tmp-snow":{
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","tmp-snow"):{
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("horizon","tmp"), ("horizon","wm-snow")],
@@ -124,8 +148,7 @@ eval_options = {
                 "round_oob":True,
                 },
             },
-        "hist-trsp-evp":{
-            "eval_type":"EvalJointHist",
+        ("EvalJointHist","trsp-evp"):{
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[("auxd-h","evp-trsp"),
@@ -135,8 +158,7 @@ eval_options = {
                 },
             },
 
-        "static-grid":{
-            "eval_type":"EvalStatic",
+        ("EvalStatic","grid"):{
             "manual_args":["data_feats", "reduce_func",
                 "collect_mean_var", "collect_min_max"],
             "defaults":{
@@ -144,8 +166,7 @@ eval_options = {
                 "static_values":["vidxs","hidxs"],
                 },
             },
-        "static-combos":{
-            "eval_type":"EvalStatic",
+        ("EvalStatic","veg-soil-combos"):{
             "manual_args":["data_feats", "reduce_func",
                 "collect_mean_var", "collect_min_max"],
             "defaults":{
@@ -161,7 +182,7 @@ def mp_add_batch(args):
     evt,bd = args
     return evaluators.Evaluator.from_tuple(evt).add_batch(bd).to_tuple()
 
-def get_eval_from_config(model_config, dataset_feats, eval_tuple,
+def get_eval_from_config(subdomain:str, model_config, dataset_feats, eval_tuple,
         static_labels=None, static_data=None):
     """
     Given a model configuration dict, a dict enumerating the features in each
@@ -173,6 +194,7 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple,
     are dependent on model configuration parameters in order to keep the
     Evaluator subclasses and instance configuration data and model agnostic.
 
+    :@param subdomain: string describing the data source.
     :@param model_config: training configuration for the model being evaluated.
     :@param dataset_feats: Dict mapping dataset names to lists of string
         feature labels indicating the order of the batch array datasets.
@@ -186,8 +208,8 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple,
     :@param static_data: Nx(Fs,) list of arrays of global static pixel data for
         reference when creating static coordinate arrays.
     """
-    eval_category,eval_label,manual_args = eval_tuple
-    eval_cfg = eval_options[eval_category]
+    eval_class,eval_d1,eval_d2,manual_args = eval_tuple
+    eval_cfg = eval_options[(eval_class,eval_d1)]
 
     ## Go ahead and build a dict of defaults that are commonly used so they
     defaults = {
@@ -196,7 +218,7 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple,
             }
 
     ## get the required arguments for this evaluator type
-    required = evaluators.EVALUATORS[eval_cfg["eval_type"]].required()
+    required = evaluators.EVALUATORS[eval_class].required()
 
     ## validate configuration structure
     assert all(k in required for k in eval_cfg["defaults"].keys()), \
@@ -237,9 +259,11 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple,
                     eval_params[a][i] = np.unique(
                             static_data[static_labels.index(ep)])
 
-    name_fields = ("eval", model_config["name"], eval_category, eval_label)
+    ## eval_{subdomain}_{model}_{eval-type}_{data_primary}_{data_secondary}
+    name_fields = ("eval", subdomain, model_config["name"],
+            eval_class, eval_d1, eval_d2)
     ## declare and return the Evaluator based on its configured type.
-    return evaluators.EVALUATORS[eval_cfg["eval_type"]](
+    return evaluators.EVALUATORS[eval_class](
             params=eval_params,
             feats=dataset_feats,
             meta={"model_config":model_config, "name":"_".join(name_fields)},
@@ -247,25 +271,29 @@ def get_eval_from_config(model_config, dataset_feats, eval_tuple,
 
 if __name__=="__main__":
     proj_root = Path("/rhome/mdodson/emulate-era5-land")
-    pkl_dir = proj_root.joinpath("data/eval")
+    pkl_dir = proj_root.joinpath("data/eval-new")
     model_parent_dir = proj_root.joinpath("data/models")
     ## static data for reference building coordinate arrays for EvalStatic
     slabels,sdata = pkl.load(proj_root.joinpath(
         "data/static/era5_static.pkl"
         ).open("rb"))
 
-    model_name = "acclstm-era5-swm-9_state_0069.pwf"
+    #model_name = "acclstm-era5-swm-9_state_0069.pwf"
     #model_name = "acclstm-era5-swm-50_state_0120.pwf"
-    #model_name = "acclstm-era5-swm-64_state_0024.pwf"
+    model_name = "acclstm-era5-swm-64_state_0024.pwf"
 
     debug = True
     batch_size = 512
     prefetch_factor = 6
     #num_batches = 2048
-    num_batches = 4096
+    #num_batches = 4096
+    num_batches = 512
     save_every_nbatches = 32
-    nworkers_dataset = 8
-    nworkers_eval = 4
+    horizon_hours = 24*5
+    nworkers_dataset = 6
+    nworkers_eval = 6
+
+    subdomain = "full" ## indicate source data (full test dataset)
 
     eval_tgs = [
             proj_root.joinpath(f"data/timegrids/timegrid_era5_{year}.h5")
@@ -285,33 +313,51 @@ if __name__=="__main__":
     df_intg_pred = [("pred",k) for k in f_intg]
     df_diff_true = [("target",k) for k in f_diff]
     df_intg_true = [("target",k) for k in f_intg]
-    df_err_all = [[
-        ("err-bias", f), ("err-abs", f),
-        ("err-bias", f"diff {f}"), ("err-abs", f"diff {f}"),
-        ] for f in f_intg]
+    df_err_abs = [[("err-abs", f), ("err-abs", f"diff {f}")] for f in f_intg]
+    df_err_bias = [[("err-bias",f), ("err-bias",f"diff {f}")] for f in f_intg]
+    df_err_all = df_err_abs + df_err_bias
 
     df_intg_all = df_intg_true+df_intg_pred+df_intg_err_bias+df_intg_err_abs
     df_diff_all = df_diff_true+df_diff_pred+df_diff_err_bias+df_diff_err_abs
 
-    ## eval_{model}_{eval-type}_{instance-str}.pkl
-    ## (eval-group, instance-str, instance-params)
+    ## eval_{subdomain}_{model}_{eval-type}_{data_primary}_{data_secondary}
+    ET,EJH,ES,ESS = ["EvalTemporal","EvalJointHist","EvalStatic",
+            "EvalSampleSources"]
     eval_config = [
-        ("temporal", "intg-all", [df_intg_all]),
-        ("temporal", "diff-all", [df_diff_all]),
-        ("hist-vc-swm-7", "counts", [[], []]),
-        #("hist-vc-swm-28", "counts", [[], []]),
-        #("hist-vc-swm-100", "counts", [[], []]),
-        #("hist-vc-swm-289", "counts", [[], []]),
-        ("hist-tmp-dwpt", "err-all", [df_intg_err, []]),
-        ("hist-diff-swm-7", "err-all", [df_err_all[0], []]),
-        #("hist-diff-swm-28", "err-all", [df_err_all[1], []]),
-        #("hist-diff-swm-100", "err-all", [df_err_all[2], []]),
-        #("hist-diff-swm-289", "err-all", [df_err_all[3], []]),
-        ("hist-tmp-snow", "err-all", [df_err_all[0], []]),
-        #("hist-trsp-evp", "err-all", [df_intg_err, []]),
-        ("static-grid", "err-all-mean", [df_err_all[0],"mean",True,False]),
-        ("static-combos", "err-all-mean", [df_err_all[0],"mean",True,False]),
+        (ESS,"space-time", "none", []), ## try covariate feats
+
+        (ET,"doy-tod", "intg-all", [df_intg_all]),
+        (ET, "doy-tod", "diff-all", [df_diff_all]),
+
+        (EJH, "diff-swm-7", "counts", [[], []]),
+        (EJH, "diff-swm-28", "counts", [[], []]),
+        (EJH, "swm-7", "counts", [[], []]),
+        (EJH, "swm-28", "counts", [[], []]),
+        #(EJH, "swm-100", "counts", [[], []]),
+        #(EJH, "swm-289", "counts", [[], []]),
+
+        (EJH, "state-diff-swm-7", "err-diff",
+            [[df_diff_err_bias[0],df_diff_err_abs[0]], []]),
+        (EJH, "state-diff-swm-28", "err-diff",
+            [[df_diff_err_bias[1],df_diff_err_abs[1]], []]),
+
+        (EJH, "tmp-dwpt", "err-diff",
+            [[*df_diff_err_bias,*df_diff_err_abs], []]),
+        (EJH, "tmp-snow", "err-diff",
+            [[df_diff_err_bias[0],df_diff_err_abs[0]], []]),
+        (EJH, "trsp-evp", "err-diff",
+            [[df_diff_err_bias[0],df_diff_err_abs[0]], []]),
+
+        (ES,"grid","err-mean",
+            [df_intg_err_bias+df_intg_err_abs,"mean",True,False]),
+        (ES,"grid","err-max", [df_intg_err_bias,"max",False,True]),
+        (ES,"grid", "err-min", [df_intg_err_bias,"min",False,True]),
+
+        (ES,"veg-soil-combos","err-mean",
+            [df_intg_err_bias+df_intg_err_abs,"mean",True,False]),
         ]
+
+    ## ----------------------------------------------------------------- ##
 
     aux_dynamic_addons = ["evp-trsp", "evp"]
     aux_static_addons = ["vt-high", "vt-low", "soilt", "vidxs", "hidxs"]
@@ -332,7 +378,7 @@ if __name__=="__main__":
         config_override={
             "feats":{
                 #"horizon_size":336,
-                "horizon_size":24*5,
+                "horizon_size":horizon_hours,
                 "aux_dynamic_feats":aux_dynamic_feats,
                 "aux_static_feats":aux_static_feats,
                 },
@@ -396,7 +442,8 @@ if __name__=="__main__":
 
     ## declare the Evaluator subclass objects
     evals = [
-        get_eval_from_config(md.config, dataset_feats, ctup, slabels, sdata)
+        get_eval_from_config(
+            subdomain, md.config, dataset_feats, ctup, slabels, sdata)
         for ctup in eval_config]
     ev_names = [ev.meta["name"] for ev in evals]
     evals = [ev.to_tuple() for ev in evals]
@@ -422,7 +469,7 @@ if __name__=="__main__":
         e = p-y
 
         wslice = slice(0,md.config["feats"]["window_size"])
-        hslice = slice(-md.config["feats"]["horizon_size"],None)
+        hslice = slice(-horizon_hours,None)
 
         ## construct a dictionary with all relevant data from this batch
         bdict = {"window":w, "horizon":h, "static":s, "static-int":si,
