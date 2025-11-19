@@ -166,7 +166,7 @@ def plot_geo_rgb(rgb:np.ndarray, lat_range:tuple, lon_range:tuple,
     ax.add_feature( ccrs.cartopy.feature.STATES,
             linewidth=ps.get("border_linewidth"))
 
-    plt.title(ps.get("title"), fontweight='bold',
+    plt.title(ps.get("title"), fontweight="bold",
             fontsize=ps.get("title_size"))
 
     if not fig_path is None:
@@ -175,6 +175,70 @@ def plot_geo_rgb(rgb:np.ndarray, lat_range:tuple, lon_range:tuple,
         plt.show()
     plt.close()
     return
+
+def plot_point_cloud_3d(coords, cvalues=None, svalues=None,
+        axis_labels:list=None, plot_spec:dict={}, fig_path=None, show=False):
+    """
+    :@param coords: (N,3) array of int coords
+    :@param cvalues: (N,) array of floats from which color values are derived
+    :@param svalues: (N,) array of floats from which sizes are derived.
+    :@param axis_labels: list of arrays/lists providing labels along each axis
+    """
+    ps = {"fig_size":(8,8), "cmap":"magma", "title_size":14, "size_scale":1}
+    ps.update(plot_spec)
+    assert coords.shape[-1] == 3
+    if not cvalues is None:
+        assert cvalues.shape[0]==coords.shape[0]
+    if not svalues is None:
+        assert svalues.shape[0]==coords.shape[0]
+
+    fig = plt.figure(figsize=ps.get("fig_size"))
+    ax = fig.add_subplot(111, projection="3d")
+    marker_size = ps.get("marker_size", svalues)
+    if marker_size is None:
+        marker_size = ps.get("size_scale")
+    else:
+        marker_size = marker_size * ps.get("size_scale")
+    scatter = ax.scatter(
+        coords[...,2], coords[...,1], coords[...,0],
+        c=ps.get("marker_colors", cvalues),
+        s=marker_size,
+        vmin=ps.get("vmin"),
+        vmax=ps.get("vmax"),
+        cmap=ps.get("cmap"),
+        alpha=ps.get("alpha",.6),
+        marker=ps.get("marker_style", "o"),
+        )
+    if axis_labels:
+        assert len(axis_labels)==3
+        assert all(isinstance(al,(list,tuple)) for al in axis_labels)
+        ax.set_xticks(range(len(axis_labels[0])))
+        ax.set_yticks(range(len(axis_labels[1])))
+        ax.set_zticks(range(len(axis_labels[2])))
+
+        ax.set_xticklabels(axis_labels[0])
+        ax.set_yticklabels(axis_labels[1])
+        ax.set_zticklabels(axis_labels[2])
+    fig.colorbar(scatter, ax=ax, label=ps.get("cb_label"),
+                 shrink=ps.get("cb_shrink"))
+
+    plt.title(ps.get("title"),fontweight="bold",fontsize=ps.get("title_size"))
+
+    if ps.get("xtick_rotation"):
+        plt.tick_params(axis="x", **{"labelrotation":ps.get(
+            "xtick_rotation")})
+    if ps.get("ytick_rotation"):
+        plt.tick_params(axis="y", **{"labelrotation":ps.get(
+            "ytick_rotation")})
+    if ps.get("ztick_rotation"):
+        plt.tick_params(axis="z", **{"labelrotation":ps.get(
+            "ztick_rotation")})
+
+    if not fig_path is None:
+        fig.savefig(fig_path.as_posix(), bbox_inches="tight", dpi=80)
+    if show:
+        plt.show()
+    plt.close()
 
 def plot_stats_1d(data_dict:dict, x_labels:list=None, fig_path:Path=None,
              show:bool=False, class_space:float=.2, bar_sigma:float=1,
@@ -386,27 +450,33 @@ def plot_lines(domain:list, ylines:list, fig_path:Path=None,
     """
     plt.clf()
     # Merge provided plot_spec with un-provided default values
-    old_ps = {"xscale":"linear", "legend_font_size":8, "legend_ncols":1,
+    ps = {"xscale":"linear", "legend_font_size":8, "legend_ncols":1,
             "yscale":"linear", "date_format":"%Y-%m-%d",
             "colors":None, "linestyle":None}
-    old_ps.update(plot_spec)
-    plot_spec = old_ps
+    ps.update(plot_spec)
 
     if multi_domain:
         assert len(domain) == len(ylines)
 
     # Plot each
-    fig, ax = plt.subplots(figsize=plot_spec.get("fig_size"))
+    fig, ax = plt.subplots(figsize=ps.get("fig_size"))
 
-    if plot_spec.get("zero_axis"):
+    if ps.get("zero_axis"):
         ax.axhline(0, color="black")
-    if plot_spec.get("zero_yaxis"):
+    if ps.get("zero_yaxis"):
         ax.axvline(0, color="black")
 
-    colors = plot_spec.get("colors")
+    colors = ps.get("colors")
     if colors:
         assert len(ylines)<=len(colors)
-    linestyle = plot_spec.get("linestyle")
+        if ps.get("cmap"):
+            print(f"Warning: colors overriding cmap configuration: {cmap}")
+
+    if cmap:=ps.get("cmap"):
+        colors = plt.get_cmap(ps.get("cmap"), len(ylines)+2)
+        colors = [colors(c) for c in range(1, len(ylines)+1)]
+
+    linestyle = ps.get("linestyle")
     if linestyle:
         assert len(ylines)<=len(linestyle)
     for i in range(len(ylines)):
@@ -416,55 +486,55 @@ def plot_lines(domain:list, ylines:list, fig_path:Path=None,
             cur_domain = domain
         ax.plot(cur_domain, ylines[i],
                 label=labels[i] if len(labels) else "",
-                linewidth=plot_spec.get("line_width"),
+                linewidth=ps.get("line_width"),
                 linestyle=None if not linestyle else linestyle[i],
                 color=None if not colors else colors[i])
 
-    ax.set_xlabel(plot_spec.get("xlabel"),
-            fontsize=plot_spec.get("label_size"))
-    ax.set_ylabel(plot_spec.get("ylabel"),
-            fontsize=plot_spec.get("label_size"))
-    ax.set_title(plot_spec.get("title"),
-            fontsize=plot_spec.get("title_size"))
-    if plot_spec.get("xrange"):
-        ax.set_xlim(*plot_spec.get("xrange"))
-    if plot_spec.get("yrange"):
-        ax.set_ylim(*plot_spec.get("yrange"))
-    ax.set_xscale(plot_spec.get("xscale"))
-    ax.set_yscale(plot_spec.get("yscale"))
+    ax.set_xlabel(ps.get("xlabel"),
+            fontsize=ps.get("label_size"))
+    ax.set_ylabel(ps.get("ylabel"),
+            fontsize=ps.get("label_size"))
+    ax.set_title(ps.get("title"),
+            fontsize=ps.get("title_size"))
+    if ps.get("xrange"):
+        ax.set_xlim(*ps.get("xrange"))
+    if ps.get("yrange"):
+        ax.set_ylim(*ps.get("yrange"))
+    ax.set_xscale(ps.get("xscale"))
+    ax.set_yscale(ps.get("yscale"))
 
     if type(cur_domain[0])==datetime:
         ax.xaxis.set_major_formatter(
-                mdates.DateFormatter(plot_spec.get("date_format")))
-        if plot_spec.get("time_locator"):
+                mdates.DateFormatter(ps.get("date_format")))
+        if ps.get("time_locator"):
             ax.xaxis.set_major_locator({
                 "minute":mdates.MinuteLocator,
                 "day":mdates.DayLocator,
                 "weekday":mdates.WeekdayLocator,
                 "month":mdates.MonthLocator,
-                }[plot_spec.get("time_locator")](
-                    interval=plot_spec.get("time_locator_interval")
+                }[ps.get("time_locator")](
+                    interval=ps.get("time_locator_interval")
                     ))
 
-    if plot_spec.get("xtick_rotation"):
-        plt.tick_params(axis="x", **{"labelrotation":plot_spec.get(
+    if ps.get("xtick_rotation"):
+        plt.tick_params(axis="x", **{"labelrotation":ps.get(
             "xtick_rotation")})
-    if plot_spec.get("ytick_rotation"):
-        plt.tick_params(axis="y", **{"labelrotation":plot_spec.get(
+    if ps.get("ytick_rotation"):
+        plt.tick_params(axis="y", **{"labelrotation":ps.get(
             "ytick_rotation")})
     if len(labels):
-        plt.legend(fontsize=plot_spec.get("legend_font_size"),
-                   ncol=plot_spec.get("legend_ncols"))
-    if plot_spec.get("xtick_align"):
+        plt.legend(fontsize=ps.get("legend_font_size"),
+                   ncol=ps.get("legend_ncols"))
+    if ps.get("xtick_align"):
         plt.setp(ax.get_xticklabels(),
-                horizontalalignment=plot_spec.get("xtick_align"))
+                horizontalalignment=ps.get("xtick_align"))
 
-    if plot_spec.get("grid"):
+    if ps.get("grid"):
         plt.grid()
     if show:
         plt.show()
     if not fig_path is None:
-        fig.savefig(fig_path, bbox_inches="tight", dpi=plot_spec.get("dpi"))
+        fig.savefig(fig_path, bbox_inches="tight", dpi=ps.get("dpi"))
     plt.close()
     return
 
@@ -645,8 +715,9 @@ def plot_lines_multiy(domain, ylines, plot_spec={},
     :@param ylines: list of lists such that the first level contains a sub-list
         for each group of lines that share a domain
     """
-    ps = {"fig_size":(12,6), "dpi":80, "spine_increment":.05,
-            "date_format":"%Y-%m-%d", "xtick_rotation":30}
+    ps = {"fig_size":(12,6), "dpi":200, "spine_increment":.1,
+          "date_format":"%Y-%m-%d", "xtick_rotation":30, "ytick_rotation":45,
+          "ylabel_position":"top", "ylabel_pad":.2,}
     ps.update(plot_spec)
     if len(domain) != len(ylines[0][0]):
         raise ValueError(
@@ -694,18 +765,25 @@ def plot_lines_multiy(domain, ylines, plot_spec={},
                 domain, s, color=colors[lc], label=line_labels[lc],
                 linestyle=line_style[lc]))
             lc += 1
-        ax.set_ylabel(y_labels[i], color=colors[lc-1],
-                fontsize=ps.get("label_fontsize"))
-        ax.tick_params(axis="y", colors=colors[lc-1])
+        ax.set_ylabel(
+                y_labels[i], color=colors[lc-1],
+                fontsize=ps.get("label_fontsize"),
+                loc=ps.get("ylabel_position"))
+        ax.tick_params(axis="y", colors=colors[lc-1],)
+        ax.tick_params(axis="y", rotation=ps.get("ytick_rotation"))
         if y_ranges[i] is not None:
             ax.set_ylim(y_ranges[i])
 
+
     host.grid(ps.get("grid", False), **ps.get("grid_kwargs", {}))
-    host.set_xlabel(ps.get("xlabel", "Time"),
+    host.set_xlabel(ps.get("xlabel", ""),
             fontsize=ps.get("label_fontsize"))
     if isinstance(domain[0], datetime):
         host.xaxis.set_major_formatter(
                 mdates.DateFormatter(ps.get("date_format")))
+    if ps.get("xticks"):
+        #print(ps.get("xticks"), len(ps.get("xticks")))
+        plt.xticks(range(len(domain)), ps.get("xticks"))
     host.tick_params(axis="x", rotation=ps.get("xtick_rotation"))
     host.legend(
             handles=[l[0] for l in lines],
@@ -731,11 +809,12 @@ def plot_lines_multiy(domain, ylines, plot_spec={},
 
     plt.title(ps.get("title", ""),
             fontdict={"fontsize":ps.get("title_fontsize")})
-    plt.tight_layout()
+    fig.tight_layout()
     if show:
         plt.show()
     if not fig_path is None:
         fig.savefig(fig_path, bbox_inches="tight", dpi=plot_spec.get("dpi"))
+    plt.clf()
     plt.close()
 
 def plot_combo_matrix(matrix, fig_path:Path, plot_spec={}):
@@ -995,6 +1074,7 @@ def plot_nested_bars(data_dict:dict, labels:dict={}, plot_error_bars=False,
     if fig_path:
         fig.set_size_inches(*ps.get("figsize"))
         fig.savefig(fig_path.as_posix(),bbox_inches="tight",dpi=ps.get("dpi"))
+    plt.close()
     return
 
 def plot_hists(counts:list, labels:list, bin_coords:np.array, normalize=False,
@@ -1062,6 +1142,7 @@ def plot_hists(counts:list, labels:list, bin_coords:np.array, normalize=False,
     if fig_path:
         fig.set_size_inches(*ps.get("figsize"))
         fig.savefig(fig_path.as_posix(),bbox_inches="tight",dpi=ps.get("dpi"))
+    plt.close()
     return
 
 def plot_scatter(x, y, size=None, color=None, plot_spec={},
@@ -1097,6 +1178,7 @@ def plot_scatter(x, y, size=None, color=None, plot_spec={},
         plt.show()
     if fig_path:
         fig.savefig(fig_path.as_posix(),bbox_inches="tight",dpi=ps.get("dpi"))
+    plt.close()
 
 def plot_geo_scalar(data, latitude, longitude, bounds=None, plot_spec={},
              latlon_ticks=False, show=False, fig_path=None,
@@ -1192,6 +1274,7 @@ def plot_geo_scalar(data, latitude, longitude, bounds=None, plot_spec={},
         fig.savefig(fig_path.as_posix(), bbox_inches="tight",dpi=80)
     if show:
         plt.show()
+    plt.close()
 
 def plot_geo_ints(int_data, lat, lon, geo_bounds=None, latlon_ticks=True,
         int_ticks=None, int_labels=None, fig_path=None,
@@ -1303,6 +1386,7 @@ def plot_geo_ints(int_data, lat, lon, geo_bounds=None, latlon_ticks=True,
         fig.savefig(fig_path.as_posix(), bbox_inches="tight",dpi=80)
     if show:
         plt.show()
+    plt.close()
     return
 
 def plot_joint_hist_and_cov(

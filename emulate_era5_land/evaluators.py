@@ -7,6 +7,8 @@ from typing import Callable
 from pathlib import Path
 
 from emulate_era5_land.plotting import plot_joint_hist_and_cov
+from emulate_era5_land.plotting import plot_point_cloud_3d
+from emulate_era5_land.plotting import plot_lines_multiy
 
 REDUCE_FUNCS = {"min":np.amin, "mean":np.average, "max":np.amax, "sum":np.sum}
 
@@ -341,16 +343,289 @@ class EvalStatic(Evaluator):
         """ """
         ## can't calculate variance of only one value
         results = {}
-        m_valid = (self._r["count"] > 1)
+        m_valid = (self._r["count"] > 0)
         c = np.where(m_valid, self._r["count"], np.nan)
         m_valid = m_valid[...,None]
-        results["mean"] = np.where(m_valid, self._r["mean"], np.nan)
-        results["min"] = np.where(m_valid, self._r["min"], np.nan)
-        results["max"] = np.where(m_valid, self._r["max"], np.nan)
-        results["m2"] = np.where(m_valid, self._r["m2"], np.nan)
-        results["var"] = results["m2"] / c[...,None]
-        results["count"] = c.astype(int)
+        if self._p["collect_min_max"]:
+            results["min"] = np.where(m_valid, self._r["min"], np.nan)
+            results["max"] = np.where(m_valid, self._r["max"], np.nan)
+        if self._p["collect_mean_var"]:
+            results["mean"] = np.where(m_valid, self._r["mean"], np.nan)
+            results["m2"] = np.where(m_valid, self._r["m2"], np.nan)
+            var = results["m2"] / c[...,None]
+            var[c==1] = 0 ## one sample has zero/undefined variance
+            results["var"] = var
+        results["count"] = np.where(m_valid[...,0], c, 0).astype(int)
         return results
+
+    def reduce(self, axes, keepdims=False):
+        """
+        Reduce the welford results along the provided axes, and return a
+        results dict with the reduced count, mean, and m2 values
+        """
+        rd = deepcopy(self.final_results())
+        count = rd["count"][...,None]
+        count_rdc = np.sum(count, axis=axes, keepdims=True, dtype=float)
+        count_rdc[count_rdc==0] = np.nan
+        m_valid = count!=0
+        m_valid_rdc = np.any(m_valid, axis=axes, keepdims=True)
+        if self._p["collect_mean_var"]:
+            assert all(k in rd.keys() for k in ["mean", "m2"])
+            assert all(v in range(0,count.ndim) for v in axes)
+            mean =  np.where(m_valid, rd["mean"], 0)
+            m2 = np.where(m_valid, rd["m2"], 0)
+            mean_rdc = np.sum(count*mean, axis=axes, keepdims=True) / count_rdc
+            ## m2 merged: sum of internal m2s + correction for different means
+            ## See "Parallel Algorithm" based on (Chan et al., 1979)
+            ## https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+            mean_diff_sq = (mean - mean_rdc) ** 2
+            m2_rdc = np.sum(m2, axis=axes, keepdims=True) \
+                    + np.sum(count * mean_diff_sq, axis=axes, keepdims=True)
+            var_rdc = m2_rdc / count_rdc
+            rd["mean"] = np.where(m_valid_rdc, mean_rdc, np.nan)
+            rd["m2"] = np.where(m_valid_rdc, m2_rdc, np.nan)
+            rd["var"] = np.where(m_valid_rdc, var_rdc, np.nan)
+            if not keepdims:
+                rd["mean"] = np.squeeze(rd["mean"], axis=axes)
+                rd["m2"] = np.squeeze(rd["m2"], axis=axes)
+                rd["var"] = np.squeeze(rd["var"], axis=axes)
+
+        if self._p["collect_min_max"]:
+            assert all(k in rd.keys() for k in ["max", "min"])
+            assert all(v in range(0,count.ndim) for v in axes)
+            rd["min"] = np.nanmin(rd["min"], axis=axes, keepdims=True)
+            rd["max"] = np.nanmax(rd["max"], axis=axes, keepdims=True)
+            if not keepdims:
+                rd["min"] = np.squeeze(rd["min"], axis=axes)
+                rd["max"] = np.squeeze(rd["max"], axis=axes)
+
+        rd["count"] = np.where(m_valid_rdc, count_rdc, 0).astype(int)
+        if not keepdims:
+            rd["count"] = np.squeeze(rd["count"], axis=axes)[...,0]
+        return rd
+
+
+    def plot(self, plot_type:str="hist-1d", static_feats=None, data_feats=[],
+             data_metrics=None, domain_labels:dict={}, fig_path=None,
+             plot_spec={}, plot_params={}, show=False,):
+        """
+        """
+        valid_data_metrics = ["mean","var","stddev","max","min"]
+        ps = deepcopy(plot_spec)
+        ## Make sure all the features are valid in the label dict
+        if not static_feats is None:
+            assert all(f in self._p["static_feats"] for f in static_feats), \
+                f"\nTrying to generate: {fig_path.name}" + \
+                f"\nProvided axis feats: {static_feats}" + \
+                f"\nValid axis feats:\n{list(self._p['static_feats'])} "
+        if not data_feats == []:
+            assert all(f in self._p["data_feats"] for f in data_feats), \
+                f"\nTrying to generate: {fig_path.name}" + \
+                f"\nProvided cov feats:\n{data_feats}" + \
+                f"\nValid cov feats:\n{list(self._p["data_feats"])} "
+
+        if plot_type=="hist-1d":
+            if static_feats is None:
+                sf = self._p["static_feats"][0]
+            else:
+                assert len(static_feats)==1, \
+                    f"hist-1d only supports one axis feature at a time."
+                sf = static_feats[0]
+
+            ix_ax = self._p["static_feats"].index(sf)
+            all_axes = set(range(self._r["count"].ndim))
+            sum_axes = tuple(all_axes-{ix_ax})
+
+            fr = self.reduce(sum_axes)
+
+            ## sort in order of increasing count
+            perm_ixs,sorted_count = map(np.array,zip(*sorted(enumerate(
+                fr["count"]), key=lambda v:v[1])))
+
+
+            domain = np.arange(len(self.scoords[ix_ax]))
+            line_labels = ["count"]
+            y_labels= ["count"]
+            line_colors = []
+            line_styles = []
+            plot_cov = not data_feats is None
+            covs = []
+            if plot_cov:
+                if isinstance(data_metrics, (list, tuple)):
+                    assert all(cm in valid_data_metrics for cm in data_metrics)
+                elif isinstance(data_metrics, str):
+                    assert data_metrics in valid_data_metrics, \
+                            f"covariate metric must be specified\n" + \
+                            f"{valid_data_metrics=}"
+                    data_metrics = [data_metrics]
+                else:
+                    raise ValueError(f"{data_metric=} must be string or list")
+
+                ## one line color per covariate feature
+                if "line_colors" in plot_params.keys():
+                    assert len(plot_params["line_colors"])==len(data_feats)+1,\
+                        "count followed by each covariate feat must " + \
+                        + "all have a unique color, not:" + \
+                        + str(plot_params["line_colors"])
+                    line_colors.append(plot_params["line_colors"][0])
+                    for ixf in range(len(data_feats)):
+                        for ixm in range(len(data_metrics)):
+                            line_colors.append(
+                                    plot_params["line_colors"][ixf+1])
+                    del plot_params["line_colors"]
+                    ps["line_colors"] = ps.get(
+                            "line_colors", line_colors)
+
+                ## one line style per covariate metric
+                if "line_style" in plot_params.keys():
+                    assert len(plot_params["line_style"]) \
+                            ==len(data_metrics)+1,\
+                        "count followed by each covariate metric must " \
+                        + "each have a unique line style, not:" \
+                        + str(plot_params["line_style"])
+                    line_styles.append(plot_params["line_style"][0])
+                    for ixf in range(len(data_feats)):
+                        for ixm in range(len(data_metrics)):
+                            line_styles.append(plot_params["line_style"][ixm])
+                    del plot_params["line_style"]
+                    ps["line_style"] = ps.get(
+                            "line_style", styles)
+
+                ## extract every metric for every covariate feature
+                ix_covs = [self._p["data_feats"].index(cf)
+                           for cf in data_feats]
+                for ixc,cf in zip(ix_covs,data_feats):
+                    covs.append([])
+                    y_labels.append(" ".join(cf))
+                    for cm in data_metrics:
+                        if cm=="stddev":
+                            tmp_cov = fr["var"][...,ixc]**0.5
+                        else:
+                            assert cm in fr.keys(),f"{cm=} {list(fr.keys())=}"
+                            tmp_cov = fr[cm][...,ixc]
+                        line_labels.append(" ".join(cf)+f" {cm}")
+                        ## apply the sorting permutation to the array
+                        covs[-1].append(tmp_cov[perm_ixs])
+
+            #print(perm_ixs)
+            #print([self.scoords[ix_ax][pix] for pix in perm_ixs])
+            xticks = [
+                domain_labels.get(
+                    str(self.scoords[ix_ax][pix]),
+                    self.scoords[ix_ax][pix])
+                for pix in perm_ixs]
+            ps["title"] = ps.get("title", " ".join(sf))
+            ps["xlabel"] = ps.get("xlabel", " ".join(sf))
+            ps["xticks"] = ps.get("xticks", xticks)
+            ps["y_labels"] = ps.get("y_labels", y_labels)
+            ps["line_labels"] = ps.get("line_labels", line_labels)
+            ## probably should go with bar graph
+            plot_lines_multiy(
+                domain=domain,
+                ylines=[[sorted_count], *covs],
+                plot_spec=ps,
+                show=show,
+                fig_path=fig_path,
+                **plot_params,
+                )
+
+        elif plot_type=="points-3d":
+            if static_feats is None:
+                assert len(self._p["static_feats"])>=3
+                axfs = self._p["static_feats"][:3]
+            else:
+                assert len(static_feats)==3
+                assert all(f in self._p["static_feats"] for f in static_feats)
+                axfs = static_feats
+
+            if isinstance(data_metrics, (list, tuple)):
+                assert all(cm in valid_data_metrics for cm in data_metrics)
+                assert len(data_metrics) == len(data_feats)
+            elif isinstance(data_metrics, str):
+                assert data_metrics in valid_data_metrics, \
+                        f"covariate metric must be specified\n" + \
+                        f"{valid_data_metrics=}"
+                data_metrics = [data_metrics] * len(data_feats)
+            elif data_metrics is None:
+                if len(data_feats):
+                    raise ValueError(
+                        f"A data metric must be specified when using " + \
+                        "data features to color or size a 3d point cloud")
+                if "mean" in self._r.keys():
+                    data_metrics = ("mean") * len(data_feats)
+                    print(f"{data_metrics=}")
+                elif "max" in self._r.keys():
+                    data_metrics = ["max"] * len(data_feats)
+
+
+            axixs = [self._p["static_feats"].index(f) for f in axfs]
+            red_axes = tuple(set(range(self._r["count"].ndim))-set(axixs))
+            fr = self.reduce(red_axes)
+
+            axis_labels = [[
+                domain_labels[axf[-1]].get(str(v),None)
+                for v in self.scoords[ix_ax]
+                ] for ix_ax,axf in zip(axixs,axfs)]
+
+            cfix,sfix = None,None
+            if len(data_feats)==0:
+                ## use count for size by default
+                sfeat = "count"
+                sfix = None
+                sdata = fr["count"]
+                ## if there are some data features use the first one for color
+                if len(self._p["data_feats"])>0:
+                    cfeat = self._p["data_feats"][0]
+                    cfix = 0
+                    if data_metrics:
+                        met = data_metrics[0]
+                    elif "mean" in self._r.keys():
+                        met = "mean"
+                    elif "max" in self._r.keys():
+                        met = "max"
+                    cdata = fr[met][...,0]
+                else:
+                    cfeat,cfix,cdata = None,None,None
+            ## otherwise default to color first argument, then size
+            elif len(data_feats)==1:
+                cfeat = data_feats[0]
+                cfix = self._p["data_feats"].index(data_feats[0])
+                cdata = fr[data_metrics[0]][...,cfix]
+                sfeat = "count"
+                sfix = None
+                sdata = fr["count"]
+            elif len(data_feats)==2:
+                ## allow (None, data_feat) for only size
+                if data_feats[0] is None:
+                    cfeat,cfix,cdata = None,None,None
+                else:
+                    cfeat = data_feats[0]
+                    cfix = self._p["data_feats"].index(data_feats[0])
+                    cdata = fr[data_metrics[0]][...,cfix]
+                sfeat = data_feats[1]
+                sfix = self._p["data_feats"].index(data_feats[1])
+                sdata = fr[data_metrics[1]][...,sfix]
+            else:
+                raise ValueError(
+                    f"You may only provide 2 data feats (color)")
+
+            ps["cb_label"] = ps.get("cb_label", " ".join(cfeat))
+
+            m_valid = fr["count"] > 0
+            ixs = np.stack(np.indices(fr["count"].shape), axis=-1)
+            ixs = ixs[m_valid]
+            sdata = None if sdata is None else sdata[m_valid]
+            cdata = None if cdata is None else cdata[m_valid]
+            plot_point_cloud_3d(
+                coords=ixs,
+                cvalues=cdata,
+                svalues=sdata,
+                axis_labels=axis_labels,
+                plot_spec=ps,
+                show=show,
+                **plot_params,
+                )
+
 
 class EvalJointHist(Evaluator):
     """
@@ -389,7 +664,7 @@ class EvalJointHist(Evaluator):
     ## required parameters
     _required = ["axis_feats", "axis_params", "cov_feats", "hist_conditions",
             "round_oob"]
-    _plot_types = ["hist-cov"] ## supported plot names
+    _plot_types = ["hist-cov-2d"] ## supported plot names
     def __init__(self, params:dict, feats:dict,
             results:dict=None, meta:dict={}):
         """ See superclass initializer. """
@@ -557,8 +832,8 @@ class EvalJointHist(Evaluator):
                 results["cov_var"].append(v)
         return results
 
-    def plot(self, plot_type:str="hist-cov", axis_feats=None, cov_feats=None,
-            hist_idx=0, cov_metric=None, fig_path=None, plot_spec={},
+    def plot(self, plot_type:str="hist-2d", axis_feats=None, cov_feats=None,
+            hist_idx=None, cov_metric=None, fig_path=None, plot_spec={},
             plot_params={}, show=False):
         """
         Plot EvalJointHist data.
@@ -584,7 +859,7 @@ class EvalJointHist(Evaluator):
         if not axis_feats is None:
             assert all(f in self._p["axis_feats"] for f in axis_feats), \
                 f"\nTrying to generate: {fig_path.name}" + \
-                f"\nProvided cov feats: {cov_feats}" + \
+                f"\nProvided axis feats: {axis_feats}" + \
                 f"\nValid axis feats:\n{list(self._p['axis_feats'])} "
         if not cov_feats is None:
             assert all(f in self._p["cov_feats"] for f in cov_feats), \
@@ -592,61 +867,44 @@ class EvalJointHist(Evaluator):
                 f"\nProvided cov feats:\n{cov_feats}" + \
                 f"\nValid cov feats:\n{list(self._p['cov_feats'])} "
 
-        if plot_type == "hist":
+        if plot_type == "hist-2d":
             if axis_feats is None:
                 assert len(self._p["axis_feats"])>=2
                 axis_feats = self._p["axis_feats"][:2]
+            plot_cov = not cov_feats is None
+            if plot_cov:
+                assert cov_metric in ["cov_mean", "cov_var", "cov_stddev"], \
+                        f"covariate metric must be specified"
             assert len(axis_feats)==2
 
             ## sum over all axes other than the selected ones.
             ix_ax1 = self._p["axis_feats"].index(axis_feats[0])
             ix_ax2 = self._p["axis_feats"].index(axis_feats[1])
+
+            if hist_idx is None:
+                hist_idx = 0
+
             sum_axes = set(range(fr["counts"][hist_idx].ndim))-{ix_ax1,ix_ax2}
             c = np.sum(fr["counts"][hist_idx], axis=tuple(sum_axes))
+
+            cov = None
+            if plot_cov:
+                ix_cov = self._p["cov_feats"].index(cov_feats[0])
+                if cov_metric=="cov_stddev":
+                    var = np.where(
+                            c>1,fr["cov_var"][hist_idx][...,ix_cov],np.nan)
+                    cov = var**0.5
+                else:
+                    cov = np.where(
+                            c>1,fr[cov_metric][hist_idx][...,ix_cov],np.nan)
             plot_joint_hist_and_cov(
                     counts=c,
                     ax1_params=self._p["axis_params"][ix_ax1],
                     ax2_params=self._p["axis_params"][ix_ax2],
-                    plot_covariate=False,
                     fig_path=fig_path,
                     show=show,
-                    separate_covariate_axes=False,
-                    plot_spec=plot_spec,
-                    **plot_params,
-                    )
-
-        if plot_type == "hist-cov":
-            if axis_feats is None:
-                assert len(self._p["axis_feats"])>=2
-                axis_feats = self._p["axis_feats"][:2]
-            if cov_feats is None:
-                assert len(self._p["cov_feats"]>=1)
-                cov_feats = [self._p["cov_feats"][0]]
-            assert cov_metric in ["cov_mean", "cov_var", "cov_stddev"], \
-                    f"covariate metric must be specified"
-            assert len(axis_feats)==2
-
-            ## sum over all axes other than the selected ones.
-            ix_ax1 = self._p["axis_feats"].index(axis_feats[0])
-            ix_ax2 = self._p["axis_feats"].index(axis_feats[1])
-            ix_cov = self._p["cov_feats"].index(cov_feats[0])
-            sum_axes = set(range(fr["counts"][hist_idx].ndim))-{ix_ax1,ix_ax2}
-            c = np.sum(fr["counts"][hist_idx], axis=tuple(sum_axes))
-            if cov_metric=="cov_stddev":
-                var = np.where(c>1,fr["cov_var"][hist_idx][...,ix_cov],np.nan)
-                cov = var**0.5
-            else:
-                cov = np.where(c>1,fr[cov_metric][hist_idx][...,ix_cov],np.nan)
-            plot_joint_hist_and_cov(
-                    counts=c,
-                    ax1_params=self._p["axis_params"][ix_ax1],
-                    ax2_params=self._p["axis_params"][ix_ax2],
-                    ## expand to others eventually
-                    covariate=cov,
-                    plot_covariate=True,
-                    fig_path=fig_path,
-                    show=show,
-                    separate_covariate_axes=True,
+                    **{"covariate":cov, "plot_covariate":True,
+                       "separate_covariate_axes":True} if plot_cov else {},
                     plot_spec=plot_spec,
                     **plot_params,
                     )
@@ -866,321 +1124,6 @@ class EvalTemporal(Evaluator):
         v = np.where(m_valid, self._r["m2"]/self._r["count"], np.nan)
         s = np.where(m_valid, self._r["m2"]/(self._r["count"]-1), np.nan)
         return { "count":c, "mean":m, "var":v, "svar":s }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class EvalGridAxes(Evaluator):
-    """
-    Stores mean and stdev of values along a subset of axes separately for each
-    batch. For gridded data, each batch is implied to correspond to a different
-    init time. Ultimately, the dataset is (T, P, S, F) shape for T init times,
-    P valid pixels, S sequence elements, and F features.
-
-    The provided axis numbers are the ones that will be preserved, while error
-    will be reduced along each of the remaining ones.
-
-    This should work for any dataset as long as the sequence axis is always
-    the 2nd one per batch.
-
-    The features with respect to which bulk values are collected are defined
-    by feat_args, which is a list of 2-tuples specifying either a stored or
-    functional feature.
-
-    Stored feature args corresponds to horizon, true, predicted, or error data
-    that are explicitly returned by the generator. Stored feat args must be
-    a 2-tuple like (data_source, feat_idx).
-
-    Functional feature args recieve 1 or more arguments each defined by a
-    stored feature configuration as specified above, and execute an arbitrary
-    function according to the provided method.
-
-    Functional feat args must be a 2-tuple like (args, func) where args is a
-    list of 2-tuples (data_source, feat_idx) and func is a Callable or a string
-    defining a lambda function.
-
-    data_source must be one of:
-    {"horizon", "true_res", "pred_res", "err_res",
-     "true_state", "pred_state", "err_state"}
-    """
-    def __init__(self, feat_args=[], axes=tuple(), pred_coarseness=1,
-            store_static=False, store_time=False, coarse_reduce_func="mean",
-            use_absolute_error=False, attrs={}):
-        """ """
-        self._pred_coarseness = pred_coarseness
-        self._axes = (axes,) if type(axes)==int else tuple(axes)
-        self._counts = None
-        self._batch_count = 0
-        ## keep feat args with un-compiled lambda strings for serializability
-        self._feat_args_unevaluated = feat_args
-        self._feat_args,self._feat_is_func = zip(
-                *map(self._validate_feat_arg,feat_args)
-                ) if len(feat_args) else (None,None)
-        self._sum = None ## Sum of feature wrt horizon
-        self._var_sum = None ## State error partial variance sum
-        self._store_static = store_static
-        self._static = None
-        self._static_int = None
-        self._store_time = store_time
-        self._time = None
-        self._indeces = None
-        self._attrs = attrs ## additional attributes
-        self._rfuncs = {"min":np.amin, "mean":np.average, "max":np.amax}
-        self._absolute_error = use_absolute_error
-        self._coarse_reduce_str = coarse_reduce_func
-        try:
-            self._crf = self._rfuncs[coarse_reduce_func]
-        except:
-            raise ValueError(f"coarse_reduce_func must be in: " + \
-                    "{self._rfuncs.keys()}")
-    @property
-    def attrs(self):
-        return self._attrs
-    @property
-    def time(self):
-        return self._time
-    @property
-    def static(self):
-        return self._static
-    @property
-    def static_int(self):
-        return self._static_int
-    @property
-    def indeces(self):
-        return self._indeces
-    @property
-    def average(self):
-        return self._sum / self._counts
-    @property
-    def variance(self):
-        return self._var_sum / self._counts
-
-    @staticmethod
-    def _validate_feat_arg(feat_arg):
-        """
-        Verify the validity of a feature-specifying argument, which may
-        identify a horizon, true, predicted, or error data feature, or
-        specify a function of one or more of the above.
-
-        :@param feat_arg: feature arg 2-tuple following the format specified
-            in the class docstrign
-        :@return: 2-tuple (feat_arg, is_callable) where feat_arg has compiled
-            function strings and is_callable specified whether the feature
-            is functional.
-        """
-        sources = ("horizon", "true_res", "pred_res", "err_res",
-                "true_state", "pred_state", "err_state")
-        assert len(feat_arg)==2, feat_arg
-        ## feat args are for stored feats iff they have type profile (str, int)
-        if type(feat_arg[0])==str and type(feat_arg[1])==int:
-            assert feat_arg[0] in sources,f"{feat_arg[0]} must be in {sources}"
-            return feat_arg,False
-        ## Otherwise it is a functional arg or invalid
-        for arg in feat_arg[0]:
-            _,is_func = EvalGridAxes._validate_feat_arg(arg)
-            assert is_func, "Functional feat arg must itself be a stored " + \
-                    "feat, not {arg}"
-        if isinstance(feat_arg[1], str):
-            axis_args = (axis_args[0], eval(axis_args[1]))
-        else:
-            assert isinstance(axis_args[1], Callable)
-        return axis_args,True
-
-    def add_batch(self, inputs, true_state, predicted_residual, indeces=None):
-        """ """
-        (_,h,s,si,t),ys,pr = inputs,true_state,predicted_residual
-        ## store grid indeces if requested, provided, and not done already
-        if not indeces is None and self._indeces is None:
-            self._indeces = indeces
-        ## the predicted state time series
-        ps = ys[:,0,:][:,np.newaxis,:] + np.cumsum(pr, axis=1)
-        ## Calculate the label residual from labels
-        yr = ys[:,1:]-ys[:,:-1]
-        if self._static is None and self._store_static:
-            self._static = s
-            self._static_int = si
-        if self._store_time:
-            if self._time is None:
-                self._time = t[np.newaxis, -ys.shape[1]::self._pred_coarseness]
-            else:
-                tmpt = t[np.newaxis, -h.shape[1]::self._pred_coarseness]
-                self._time = np.concatenate([self._time, tmpt], axis=0)
-        es = ps - ys[:,1:]
-        er = pr - yr
-        if self._absolute_error:
-            es = np.abs(es)
-            er = np.abs(er)
-        ## Make a dict of the data arrays to make extraction easier
-        if self._pred_coarseness != 1:
-            b,_,f = h.shape
-            h = h.reshape(h.shape[0],-1,self._pred_coarseness,h.shape[-1])
-            h = self._crf(h, axis=2)
-
-        data = {"horizon":h, "true_res":yr, "pred_res":pr, "err_res":er,
-                "true_state":ys[:,1:], "pred_state":ps, "err_state":es}
-        feats = []
-        for f,is_func in zip(self._feat_args, self._feat_is_func):
-            ## Collect arguments and evaluate the method if feat is functional
-            if is_func:
-                args = [data[s][...,ix] for s,ix in f[0]]
-                feats.append(f[1](*args))
-            ## Otherwise just extract the data from the proper source array
-            else:
-                s,ix = f
-                feats.append(data[s][...,ix])
-
-        feats = np.stack(feats, axis=-1)
-
-        ## Keep requested axes, and never reduce along the feature axis. Also
-        ## ignore the first axis for now since it is only implied.
-        r_axes = tuple([
-                a+1 for a in range(len(feats.shape)-1)
-                if a+1 not in self._axes
-                ])
-        ## set the counts for the sum/var arrays, which is the product of the
-        ## number of elements along each marginalized axis
-        self._batch_count += 1
-        self._counts = np.prod([feats.shape[a-1] for a in r_axes]) \
-                * [self._batch_count, 1][0 in self._axes]
-
-        ## Create new init time axis
-        feats = feats[None]
-        tmp_sum = np.sum(feats, keepdims=True, axis=r_axes, dtype=np.float64)
-
-        ## Case where batch axis is kept
-        if 0 in self._axes:
-            ## Only calculate variance within this timestep if not
-            ## marginalizing over the first axis
-            tmp_var = np.sum(
-                    (feats - tmp_sum/self._counts)**2,
-                    axis=r_axes, keepdims=True, dtype=np.float64)
-            if self._sum is None:
-                self._sum = tmp_sum
-                self._var_sum = tmp_var
-            else:
-                self._sum = np.concatenate([self._sum, tmp_sum], axis=0)
-                self._var_sum = np.concatenate([self._var_sum,tmp_var], axis=0)
-        ## Case where batch axis is marginalized over
-        else:
-            ## For averaging over first axis, use mean values that gradually
-            ## update over multiple batches to calculate variance
-            if self._sum is None:
-                self._sum = tmp_sum
-                tmp_var = np.sum(
-                        (feats - self._sum/self._counts)**2,
-                        axis=r_axes, keepdims=True, dtype=np.float64)
-                self._var_sum = tmp_var
-            else:
-                self._sum += tmp_sum
-                tmp_var = np.sum(
-                        (feats - self._sum/self._counts)**2,
-                        axis=r_axes, keepdims=True, dtype=np.float64)
-                self._var_sum += tmp_var
-        return self
-
-    def get_results(self):
-        """ """
-        return {
-                "avg":self._sum,
-                "var":self._var_sum,
-                "static":self._static,
-                "static_int":self._static_int,
-                "time":self._time,
-                "counts":self._counts,
-                "axes":self._axes,
-                "indeces":self._indeces,
-                "batch_count":self._batch_count,
-                "feat_args":self._feat_args_unevaluated,
-                "pred_coarseness":self._pred_coarseness,
-                "coarse_reduce_func":self._coarse_reduce_str,
-                "use_absolute_error":self._absolute_error,
-                "attrs":self._attrs,
-                }
-
-    def concatenate(self, other:"EvalGridAxes", axis):
-        """
-        Concatenate a EvalGridAxes object with another one along an axis.
-        I'm only really going to use it for the spatial axis, but I tried to
-        write it to be more general. No promises it works though.
-        """
-        assert axis in self._axes, f"Concatenation axis {axis} must be one" + \
-                f" of the preserved ones ({self._axes})"
-        evr1 = self.get_results()
-        evr2 = other.get_results()
-        ## Assume by default all config comes from this object
-        conc_data = deepcopy(evr1)
-        conc_data.update({
-                "avg":np.concatenate(
-                    [evr1["avg"], evr2["avg"]], axis=axis),
-                "var":np.concatenate(
-                    [evr1["var"], evr2["var"]], axis=axis),
-                })
-        if all(not ix is None for ix in [evr1["indeces"],evr2["indeces"]]):
-            conc_data["indeces"] = np.concatenate(
-                    [evr1["indeces"], evr2["indeces"]], axis=0)
-        if all(not ix is None for ix in [evr1["static"],evr2["static"]]):
-            conc_data["static"] = np.concatenate(
-                    [evr1["static"], evr2["static"]], axis=0)
-            conc_data["static_int"] = np.concatenate(
-                    [evr1["static_int"], evr2["static_int"]], axis=0)
-        new_ev = EvalGridAxes()
-        return new_ev.from_dict(conc_data)
-
-    def to_pkl(self, pkl_path:Path, additional_attributes:dict={}):
-        """
-        Write the residual and state horizon error results to a pkl file
-
-        :@param pkl_path: Path to a non-existing pkl path to dump results to.
-        :@param additional_attributes: Dict of additional information to
-            include alongside the horizon error distribution data. If any of
-            the keys match existing auxillary attributes the new ones provided
-            here will replace them.
-        """
-        pkl.dump(self.get_results(), pkl_path.open("wb"))
-
-    def from_dict(self, config_dict):
-        p = config_dict
-        self._counts = p["counts"]
-        self._sum = p["avg"]
-        self._var_sum = p["var"]
-        self._static = p["static"]
-        self._static_int = p.get("static_int")
-        self._time = p["time"]
-        self._store_static = not self._static is None
-        self._store_time = not self._time is None
-        self._axes = p["axes"]
-        self._feat_args_unevaluated = p["feat_args"]
-        self._feat_args,self._feat_is_func = zip(
-                *map(self._validate_feat_arg,p["feat_args"]))
-        self._batch_count = p["batch_count"]
-        self._indeces = p["indeces"]
-        self._pred_coarseness = p.get("pred_coarseness", 1)
-        self._coarse_reduce_str = p["coarse_reduce_func"]
-        self._attrs = p["attrs"]
-        self._absolute_error = p["use_absolute_error"]
-        try:
-            self._crf = self._rfuncs[self._coarse_reduce_str]
-        except:
-            raise ValueError(f"coarse_reduce_func must be in: " + \
-                    "{self._rfuncs.keys()}")
-        return self
-
-    def from_pkl(self, pkl_path:Path):
-        """ """
-        return self.from_dict(pkl.load(pkl_path.open("rb")))
-
 
 EVALUATORS = {
         "EvalTemporal":EvalTemporal,
