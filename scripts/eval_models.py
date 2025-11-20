@@ -278,16 +278,16 @@ if __name__=="__main__":
         "data/static/era5_static.pkl"
         ).open("rb"))
 
-    #model_name = "acclstm-era5-swm-9_state_0069.pwf"
+    model_name = "acclstm-era5-swm-9_state_0069.pwf"
     #model_name = "acclstm-era5-swm-50_state_0120.pwf"
-    model_name = "acclstm-era5-swm-64_state_0024.pwf"
+    #model_name = "acclstm-era5-swm-64_state_0024.pwf"
 
     debug = True
-    batch_size = 512
+    batch_size = 1024
     prefetch_factor = 6
     #num_batches = 2048
     #num_batches = 4096
-    num_batches = 512
+    num_batches = 4096
     save_every_nbatches = 32
     horizon_hours = 24*5
     nworkers_dataset = 6

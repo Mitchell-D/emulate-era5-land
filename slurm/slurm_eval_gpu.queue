@@ -31,8 +31,8 @@
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_gridstats_eval.err
 ###SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.out
 ###SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_test_gens.err
-#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_models_acclstm-era5-swm-64.out
-#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_models_acclstm-era5-swm-64.err
+#SBATCH -o /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_models_acclstm-era5-swm-9.out
+#SBATCH -e /rhome/mdodson/emulate-era5-land/slurm/out/slurm_eval_models_acclstm-era5-swm-9.err
 
 ##module load cuda/11.8
 module load cuda/12.4
