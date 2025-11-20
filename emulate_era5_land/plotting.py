@@ -200,7 +200,7 @@ def plot_point_cloud_3d(coords, cvalues=None, svalues=None,
     else:
         marker_size = marker_size * ps.get("size_scale")
     scatter = ax.scatter(
-        coords[...,2], coords[...,1], coords[...,0],
+        coords[...,0], coords[...,1], coords[...,2],
         c=ps.get("marker_colors", cvalues),
         s=marker_size,
         vmin=ps.get("vmin"),

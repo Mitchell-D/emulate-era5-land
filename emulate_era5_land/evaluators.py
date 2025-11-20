@@ -486,10 +486,11 @@ class EvalStatic(Evaluator):
                     line_styles.append(plot_params["line_style"][0])
                     for ixf in range(len(data_feats)):
                         for ixm in range(len(data_metrics)):
-                            line_styles.append(plot_params["line_style"][ixm])
+                            line_styles.append(
+                                    plot_params["line_style"][ixm+1])
                     del plot_params["line_style"]
                     ps["line_style"] = ps.get(
-                            "line_style", styles)
+                            "line_style", line_styles)
 
                 ## extract every metric for every covariate feature
                 ix_covs = [self._p["data_feats"].index(cf)

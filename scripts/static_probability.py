@@ -82,9 +82,6 @@ def plot_probability_thresholds(
 
     domain,ylines = zip(*dphists)
 
-    for t,d,l in zip(thresholds, domain, ylines):
-        #print(t,d.shape,l.shape)
-        print(d)
     plot_lines(
         domain=domain, ## probability of dropping
         ylines=ylines, ## probability of dropping
@@ -106,7 +103,7 @@ if __name__=="__main__":
 
     #probability_threshold_explore(eval_pkl)
 
-    '''
+    #'''
     plot_probability_thresholds(
             eval_pkl,
             pmin=1e-6,
@@ -126,26 +123,30 @@ if __name__=="__main__":
             fig_path=None,
             show=True,
             )
-    '''
+    #'''
 
     ev = Evaluator.from_pkl(eval_pkl)
     pprint(ev.params)
 
     ## 1d line plots of class size & covariate error
-    '''
+    #'''
     ev.plot(
         plot_type="hist-1d",
         static_feats=[("auxs", "vt-high")],
         data_feats=[("err-abs", "swm-7"), ("err-abs", "swm-28")],
         data_metrics=["mean", "stddev"],
         domain_labels=list_era5["static-classes"]["vt-high"],
-        plot_params={"line_colors":["black", "green", "blue"]},
+        plot_params={
+            "line_colors":["black", "green", "blue"],
+            "line_style":["-","-","-."],
+            },
         plot_spec={
             "spine_increment":.07,
             "ylabel_position":"top",
             "ytick_rotation":60,
             },
-        show=True,
+        show=False,
+        fig_path=Path("/Users/mtdodson/desktop/tmp-image/eval-new/tmp-0.png"),
         )
     ev.plot(
         plot_type="hist-1d",
@@ -153,12 +154,16 @@ if __name__=="__main__":
         data_feats=[("err-abs", "swm-7"), ("err-abs", "swm-28")],
         data_metrics=["mean", "stddev"],
         domain_labels=list_era5["static-classes"]["soilt"],
-        plot_params={"line_colors":["black", "green", "blue"]},
+        plot_params={
+            "line_colors":["black", "green", "blue"],
+            "line_style":["-", "-","-."],
+            },
         plot_spec={
             "spine_increment":.07,
             "ylabel_position":"top",
             },
-        show=True,
+        show=False,
+        fig_path=Path("/Users/mtdodson/desktop/tmp-image/eval-new/tmp-1.png"),
         )
     ev.plot(
         plot_type="hist-1d",
@@ -166,15 +171,18 @@ if __name__=="__main__":
         data_feats=[("err-abs", "swm-7"), ("err-abs", "swm-28")],
         data_metrics=["mean", "stddev"],
         domain_labels=list_era5["static-classes"]["vt-low"],
-        plot_params={"line_colors":["black", "green", "blue"]},
+        plot_params={
+            "line_colors":["black", "green", "blue"],
+            "line_style":["-", "-","-."],
+            },
         plot_spec={
             "spine_increment":.07,
             "ylabel_position":"top",
             },
-        show=True,
-        fig_path=Path("/Users/mtdodson/desktop/tmp.png"),
+        show=False,
+        fig_path=Path("/Users/mtdodson/desktop/tmp-image/eval-new/tmp-2.png"),
         )
-    '''
+    #'''
 
     ## 3d point clouds
     #'''
@@ -184,12 +192,16 @@ if __name__=="__main__":
         data_feats=[("err-abs", "swm-7")],
         data_metrics="mean",
         plot_spec={
-            "size_scale":.025,
+            "size_scale":.035,
             #"size_scale":100,
-            "cmap":"hot_r",
+            "cmap":"jet",
             "cb_shrink":.8,
             "vmin":0.,
-            "vmax":.025,
+            "vmax":.020,
+            "alpha":.7,
+            "xtick_rotation":45,
+            "ytick_rotation":45,
+            "ztick_rotation":45,
             },
         show=True,
         )
@@ -200,12 +212,13 @@ if __name__=="__main__":
         data_feats=[("err-bias", "swm-7")],
         data_metrics="mean",
         plot_spec={
-            "size_scale":.025,
+            "size_scale":.035,
             #"size_scale":100,
             "vmin":-.015,
             "vmax":.015,
             "cmap":"bwr_r",
             "cb_shrink":.8,
+            "alpha":.7,
             "xtick_rotation":45,
             "ytick_rotation":45,
             "ztick_rotation":45,
