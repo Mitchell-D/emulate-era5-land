@@ -1,3 +1,14 @@
+"""
+This script provides the configuration system for initializing and running
+Evaluator subclass instances. Evaluator instances are defined in terms of 3
+level hierarchy eval_type, then data_primary, then data_secondary.
+
+The eval_type is the name of the subclass of Evaluator, data_primary identifies
+the presets for that eval_type (defined in eval_options), and data_secondary
+identifies the implementation of those presets to a particular set of
+manual_args. The manual_args required for a preset are defined in eval_options
+and the arguments themselves are provided in eval_config.
+"""
 import numpy as np
 import json
 import torch
@@ -36,7 +47,7 @@ eval_options = {
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[
-                    ("target","diff swm-7"), ("pred","diff swm-7")],
+                    ("target","diff swm-7"), ("prediction","diff swm-7")],
                 "axis_params":[(-.001,.001,256),(-.1,.1,256)],
                 "round_oob":True,
                 },
@@ -45,7 +56,7 @@ eval_options = {
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[
-                    ("target","diff swm-28"), ("pred","diff swm-28")],
+                    ("target","diff swm-28"), ("prediction","diff swm-28")],
                 "axis_params":[(-.0005,.0005,256),(-.05,.05,256)],
                 "round_oob":True,
                 },
@@ -54,7 +65,7 @@ eval_options = {
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[
-                    ("target","diff swm-100"), ("pred","diff swm-100")],
+                    ("target","diff swm-100"), ("prediction","diff swm-100")],
                 "axis_params":[(-.0002,.0002,256),(-.02,.02,256)],
                 "round_oob":True,
                 },
@@ -63,7 +74,7 @@ eval_options = {
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
                 "axis_feats":[
-                    ("target","diff swm-289"), ("pred","diff swm-289")],
+                    ("target","diff swm-289"), ("prediction","diff swm-289")],
                 "axis_params":[(-.0001,.0001,256),(-.01,.01,256)],
                 "round_oob":True,
                 },
@@ -71,7 +82,7 @@ eval_options = {
         ("EvalJointHist","swm-7"):{ ## validation curve histograms
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
-                "axis_feats":[("target","swm-7"), ("pred","swm-7")],
+                "axis_feats":[("target","swm-7"), ("prediction","swm-7")],
                 "axis_params":[(0,.8,256),(0,.8,256)],
                 "round_oob":True,
                 },
@@ -79,7 +90,7 @@ eval_options = {
         ("EvalJointHist","swm-28"):{ ## validation curve histograms
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
-                "axis_feats":[("target","swm-28"), ("pred","swm-28")],
+                "axis_feats":[("target","swm-28"), ("prediction","swm-28")],
                 "axis_params":[(0,.8,256),(0,.8,256)],
                 "round_oob":True,
                 },
@@ -87,7 +98,7 @@ eval_options = {
         ("EvalJointHist","swm-100"):{ ## validation curve histograms
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
-                "axis_feats":[("target","swm-100"), ("pred","swm-100")],
+                "axis_feats":[("target","swm-100"), ("prediction","swm-100")],
                 "axis_params":[(0,.8,256),(0,.8,256)],
                 "round_oob":True,
                 },
@@ -95,7 +106,7 @@ eval_options = {
         ("EvalJointHist","swm-289"):{ ## validation curve histograms
             "manual_args":["cov_feats", "hist_conditions"],
             "defaults":{
-                "axis_feats":[("target","swm-289"), ("pred","swm-289")],
+                "axis_feats":[("target","swm-289"), ("prediction","swm-289")],
                 "axis_params":[(0,.8,256),(0,.8,256)],
                 "round_oob":True,
                 },
@@ -309,8 +320,8 @@ if __name__=="__main__":
     df_intg_err_bias = [("err-bias",k) for k in f_intg]
     df_intg_err_abs = [("err-abs",k) for k in f_intg]
     df_intg_err = df_intg_err_bias + df_intg_err_abs
-    df_diff_pred = [("pred",k) for k in f_diff]
-    df_intg_pred = [("pred",k) for k in f_intg]
+    df_diff_pred = [("predictin",k) for k in f_diff]
+    df_intg_pred = [("prediction",k) for k in f_intg]
     df_diff_true = [("target",k) for k in f_diff]
     df_intg_true = [("target",k) for k in f_intg]
     df_err_abs = [[("err-abs", f), ("err-abs", f"diff {f}")] for f in f_intg]
@@ -323,6 +334,7 @@ if __name__=="__main__":
     ## eval_{subdomain}_{model}_{eval-type}_{data_primary}_{data_secondary}
     ET,EJH,ES,ESS = ["EvalTemporal","EvalJointHist","EvalStatic",
             "EvalSampleSources"]
+    ## (eval_type, data_primary, data_secondary, manual_args)
     eval_config = [
         (ESS,"space-time", "none", []), ## try covariate feats
 
@@ -358,7 +370,7 @@ if __name__=="__main__":
             [df_intg_err_bias+df_intg_err_abs,"mean",True,False]),
         ]
 
-    ## ----------------------------------------------------------------- ##
+    ## ------------------ (end normal configuration) ------------------ ##
 
     aux_dynamic_addons = ["evp-trsp", "evp"]
     aux_static_addons = ["vt-high", "vt-low", "soilt", "vidxs", "hidxs"]
@@ -416,6 +428,7 @@ if __name__=="__main__":
             #prefetch_factor=1,
             ))
 
+    '''
     ## get feat indeces of differentiated feats, which must be discretely
     ## integrated and concatented with the other data.
     diff_fixs = []
@@ -424,21 +437,13 @@ if __name__=="__main__":
         if f.split(" ")[0]=="diff":
             diff_fixs.append(ix)
             integ_feats.append(" ".join(f.split(" ")[1:]))
+    '''
 
     ## make an updated feature listing included the integrated output values
     dataset_feats = {
-            "window":md.config["feats"]["window_feats"],
-            "horizon":md.config["feats"]["horizon_feats"],
-            "static":md.config["feats"]["static_feats"],
-            "static-int":md.config["feats"]["static_int_feats"],
-            "auxd-h":aux_dynamic_feats,
-            "auxd-w":aux_dynamic_feats,
-            "auxs":aux_static_feats,
-            "time":["epoch"],
-            "target":md.config["feats"]["target_feats"]+integ_feats,
-            "pred":md.config["feats"]["target_feats"]+integ_feats,
-            "err-bias":md.config["feats"]["target_feats"]+integ_feats,
-            "err-abs":md.config["feats"]["target_feats"]+integ_feats,
+            **pds.feats
+            "err-bias":pds.feats["target"],
+            "err-abs":pds.feats["target"],
             }
 
     ## declare the Evaluator subclass objects
@@ -453,19 +458,21 @@ if __name__=="__main__":
         ## unpack the batch data
         if debug:
             _t0 = perf_counter()
-        x,(y,),a,(p,) = next(pdl)
+        #x,(y,),a,(p,) = next(pdl)
+        bdict = next(pdl)
         if debug:
             _t1 = perf_counter()
             print(f"B{i+1:03} dataloader total: {_t1-_t0:.3f}")
-        w,h,s,si,init = x
-        a_d,a_s,t = a
+        #w,h,s,si,init = x
+        #a_d,a_s,t = a
 
+        '''
         ## concatenate integrated versions of only the differentiated features.
         y = np.concatenate([
-            y, init[...,diff_fixs]+np.cumsum(y[...,diff_fixs], axis=1)
+            y, init[...,diff_fixs] + np.cumsum(y[...,diff_fixs], axis=1)
             ], axis=-1)
         p = np.concatenate([
-            p, init[...,diff_fixs]+np.cumsum(p[...,diff_fixs], axis=1)
+            p, init[...,diff_fixs] + np.cumsum(p[...,diff_fixs], axis=1)
             ], axis=-1)
         e = p-y
 
@@ -477,6 +484,10 @@ if __name__=="__main__":
                 "auxd-w":a_d[:,wslice], "auxd-h":a_d[:,hslice],
                 "auxs":a_s, "time":t, "target":y,
                 "pred":p, "err-bias":e, "err-abs":np.abs(e), }
+        '''
+
+        bdict["err-bias"] = bdict["prediction"] - bdict["target"]
+        bdict["err-abs"] = np.abs(bdict["err-bias"])
 
         ## update the evaluators
         if debug:

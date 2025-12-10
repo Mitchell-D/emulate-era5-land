@@ -92,7 +92,8 @@ config = {
                     "cov_vmax":0.001,
                     "diagonal_width":2,
                     "aspect":1,
-                    }, "plot_params":{"plot_diagonal":True}},
+                    },
+                "plot_params":{"plot_diagonal":True}},
             ## swm-7 absolute error variance
             "swm-7-abs-stddev":{"plot_type":"hist-cov",
                 "cov_feats":[("err-abs","diff swm-7")],
@@ -105,7 +106,8 @@ config = {
                     "cov_vmax":0.005,
                     "aspect":1,
                     "diagonal_width":2,
-                    }, "plot_params":{"plot_diagonal":True}},
+                    },
+                "plot_params":{"plot_diagonal":True}},
             ## swm-7 error bias
             "swm-7-bias":{"plot_type":"hist-cov",
                 "cov_feats":[("err-bias","diff swm-7")],
@@ -119,7 +121,8 @@ config = {
                     "cov_cmap":"RdBu",
                     "aspect":1,
                     "diagonal_width":2,
-                    }, "plot_params":{"plot_diagonal":True}},
+                    },
+                "plot_params":{"plot_diagonal":True}},
             ## swm-28 absolute error
             "swm-28-abs":{"plot_type":"hist-cov",
                 "cov_feats":[("err-abs","diff swm-28")],

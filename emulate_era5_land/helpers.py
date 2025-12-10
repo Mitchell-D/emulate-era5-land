@@ -4,6 +4,19 @@ from pathlib import Path
 
 from collections.abc import Mapping, Sequence
 
+def take_index_from_nested(data, index, axis=0):
+    """ Move all tensors in a nested data structure to a particular device """
+    if isinstance(data, torch.Tensor):
+        return torch.take_along_dim(data, index, dim=axis)
+    elif isinstance(data, (list, tuple)):
+        return tuple([take_index_from_nested(item, index, axis)
+                      for item in data])
+    elif isinstance(data, dict):
+        return {key: take_index_from_nested(value, index, axis)
+                for key, value in data.items()}
+    else:
+        raise ValueError(f"Unsupported data type: {type(data)}")
+
 def move_to_device(data, device):
     """ Move all tensors in a nested data structure to a particular device """
     if isinstance(data, torch.Tensor):

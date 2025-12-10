@@ -422,7 +422,7 @@ class EvalStatic(Evaluator):
             assert all(f in self._p["data_feats"] for f in data_feats), \
                 f"\nTrying to generate: {fig_path.name}" + \
                 f"\nProvided cov feats:\n{data_feats}" + \
-                f"\nValid cov feats:\n{list(self._p["data_feats"])} "
+                f"\nValid cov feats:\n{list(self._p['data_feats'])} "
 
         if plot_type=="hist-1d":
             if static_feats is None:
@@ -529,6 +529,13 @@ class EvalStatic(Evaluator):
                 fig_path=fig_path,
                 **plot_params,
                 )
+
+        ## plot
+        elif plot_type=="size-cov":
+            if isinstance(data_metrics, (list,tuple)):
+                assert all(cm in valid_data_metrics for cm in data_metrics)
+                assert len(data_metrics) == len(data_feats)
+            raise ValueError(f"Incomplete plotting method")
 
         elif plot_type=="points-3d":
             if static_feats is None:

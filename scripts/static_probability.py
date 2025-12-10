@@ -103,28 +103,6 @@ if __name__=="__main__":
 
     #probability_threshold_explore(eval_pkl)
 
-    #'''
-    plot_probability_thresholds(
-            eval_pkl,
-            pmin=1e-6,
-            pmax=.1,
-            logspace=True,
-            nlines=32,
-            nbins=24,
-            plot_spec={
-                "title":"probability of dropping samples per threshold",
-                "xlabel":"probability of dropping samples",
-                "ylabel":"num of combos with drop rate",
-                "legend_ncols":3,
-                "cmap":"gnuplot",
-                "line_width":3,
-                #"yscale":"log",
-                },
-            fig_path=None,
-            show=True,
-            )
-    #'''
-
     ev = Evaluator.from_pkl(eval_pkl)
     pprint(ev.params)
 
@@ -226,4 +204,26 @@ if __name__=="__main__":
         show=True,
         )
     #'''
+
     #'''
+    plot_probability_thresholds(
+            eval_pkl,
+            pmin=1e-6,
+            pmax=.1,
+            logspace=True,
+            nlines=32,
+            nbins=24,
+            plot_spec={
+                "title":"probability of dropping samples per threshold",
+                "xlabel":"probability of dropping samples",
+                "ylabel":"num of combos with drop rate",
+                "legend_ncols":3,
+                "cmap":"gnuplot",
+                "line_width":3,
+                #"yscale":"log",
+                },
+            fig_path=None,
+            show=True,
+            )
+    #'''
+

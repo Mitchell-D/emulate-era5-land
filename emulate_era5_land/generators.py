@@ -7,6 +7,7 @@ from time import perf_counter
 
 from emulate_era5_land.models import get_model_from_config
 from emulate_era5_land.helpers import _parse_feat_idxs,_calc_feat_array
+from emulate_era5_land.helpers import move_to_device,take_index_from_nested
 
 class PredictionDataset(torch.utils.data.IterableDataset):
     """
@@ -15,7 +16,7 @@ class PredictionDataset(torch.utils.data.IterableDataset):
     """
     def __init__(self, model_path:Path, use_dataset:str=None,
             normalized_outputs=None, config_override:dict=None, device=None,
-            output_device=None, debug=False):
+            include_integrated_outputs:False, output_device=None, debug=False):
         """
         :@param model_path: Path to the model weights, which is assumed to be
             inside the 'model dir' containing the configuration json
@@ -32,6 +33,11 @@ class PredictionDataset(torch.utils.data.IterableDataset):
             auxiliary features or change the window/horizon size, and use the
             data field to configure an evaluation generator.
         :@param device: Device on which to compute the model results
+        :@param include_integrated_outputs: If True, features in the prediction
+            and target arrays that are differentiated and don't have an
+            integrated feature explicitly included will be integrated and
+            concatenated to the returned array, and the integrated feat labels
+            will be reflected in the feat dict.
         :@param output_device: If defined, tensors are sent to this device
             before being returned. If None, the device is used
         """
@@ -44,6 +50,16 @@ class PredictionDataset(torch.utils.data.IterableDataset):
             self._out_device = device
         else:
             self._out_device = output_device
+        self._signature = {
+            "model_path":model_path,
+            "use_dataset":use_dataset,
+            "normalized_outputs":normalized_outputs,
+            "config_override":config_override,
+            "device":device,
+            "include_integrated_outputs":include_integrated_outputs,
+            "output_device":output_device,
+            "debug":debug,
+            }
         self._norm_out = normalized_outputs
         self._model_dir = model_path.parent
         self._model_path = model_path
@@ -109,12 +125,12 @@ class PredictionDataset(torch.utils.data.IterableDataset):
         self._cur_ix = None
 
         pf_args = {
-                "w":self._ds.signature["window_feats"],
-                "h":self._ds.signature["horizon_feats"],
-                "y":self._ds.signature["target_feats"],
+                "w":self._ds.feats["window"],
+                "h":self._ds.feats["horizon"],
+                "y":self._ds.feats["target"],
                 ## ew yea ik
                 "yinit":[fl.split(" ")[-1]
-                    for fl in self._ds.signature["target_feats"]]
+                    for fl in self._ds.feats["target"]]
                 }
 
         self._norms = {}
@@ -128,42 +144,91 @@ class PredictionDataset(torch.utils.data.IterableDataset):
 
         self._norms["s"] = torch.Tensor([
             self._ds.signature["norm_coeffs"].get(fl,(0,1))
-            for fl in self._ds.signature["static_feats"]
+            for fl in self._ds.fefats["static"]
             ], device=self._out_device).T
+
+        self._integ_out_feats = []
+        self._integ_out_ixs = []
+        if self._signature["include_integrated_outputs"]:
+            for ix,f in enumerate(self._ds.feats["target"]):
+                if f.split(" ")[0]=="diff":
+                    assert len(f.split(" "))==2
+                    base_feat = f.split(" ")[-1]
+                    if base_feat in self._ds.feats["target"]:
+                        continue
+                    self._integ_out_feats.append(base_feat)
+                    self._integ_out_ixs.append(ix)
 
         self._debug = debug
 
+    @property
+    def feats(self):
+        """
+        Return a dict mapping array names to their feature labels, which is
+        organized in the same way as the returned data.
+        """
+        return {
+            **self._ds.feats,
+            "target":self._ds_feats["target"] + self._integ_out_feats,
+            "prediction":self._ds.feats["target"] + self._integ_out_feats,
+            }
+
+    @property
+    def signature(self):
+        """ expose dict of all input parameters for serialization / re-init """
+        return self._signature
+
+
     def _replenish_batch(self):
         """ """
-        inputs,(y,),aux = next(self._dl)
-        w,h,s,si,init = inputs
-        p = self._model(w, h, s, si, target=y, device=self._device)
+        #inputs,(y,),aux = next(self._dl)
+        batch = next(self._dl)
+        #w,h,s,si,init = inputs
+        #p = self._model(w, h, s, si, target=y, device=self._device)
+        batch["prediction"] = self._model(
+            batch["window"], batch["horizon"], batch["static"],
+            batch["static-int"], target=batch["target"], device=self._device
+            )
         self._cur_ix = 0
 
-        ## send all datasets to the output device
-        od = self._out_device
-        w = w.to(od)
-        h = h.to(od)
-        s = s.to(od)
-        si = tuple([x.to(od) for x in si])
-        init = init.to(od)
-        y = y.to(od)
-        aux = tuple([x.to(od) for x in aux])
-        p = p.to(od)
+        batch = move_to_device(batch, self._out_device)
 
         ## if the model expects normalized inputs, but de-normalized outputs
         ## are wanted, rescale the input values after running the model.
         ## There are other cases here that prob should be handled but nah
         norm_in = self._og_config["model"]["args"]["normalized_inputs"]
         if not self._norm_out and norm_in:
-            w = w * self._norms["w"][1] + self._norms["w"][0]
-            h = h * self._norms["h"][1] + self._norms["h"][0]
-            s = s * self._norms["s"][1] + self._norms["s"][0]
-            init = init * self._norms["yinit"][1] + self._norms["yinit"][0]
-            y = y * self._norms["y"][1] + self._norms["y"][0]
+            batch["window"] = batch["window"] \
+                    * self._norms["w"][1] + self._norms["w"][0]
+            batch["horizon"] = batch["horizon"] \
+                    * self._norms["h"][1] + self._norms["h"][0]
+            batch["static"] = batch["static"] \
+                    * self._norms["s"][1] + self._norms["s"][0]
+            batch["target-init"] = batch["target-init"] \
+                    * self._norms["yinit"][1] + self._norms["yinit"][0]
+            batch["target"] = batch["target"] \
+                    * self._norms["y"][1] + self._norms["y"][0]
 
-        self._cur_sample = ((w,h,s,si,init), (y,), aux, (p,))
-        self._cur_bs = w.shape[0]
+        ## integrate the outputs if requested.
+        if self._signature["include_integrated_outputs"]:
+            if self._norm_out:
+                raise ValueError(
+                    "output integration is not currently supported for " + \
+                    "normalized outputs. Have fun implementing it!")
+            batch["target"] = torch.cat([
+                batch["target"],
+                batch["target-init"] + torch.cumsum(
+                    batch["target"][...,self._integ_out_ixs], axis=1)
+                ], axis=-1)
+            batch["prediction"] = torch.cat([
+                batch["prediction"],
+                batch["target-init"] + torch.cumsum(
+                    batch["prediction"][...,self._integ_out_ixs], axis=1)
+                ], axis=-1)
+
+        #self._cur_sample = ((w,h,s,si,init), (y,), aux, (p,))
+        self._cur_sample = batch
+        self._cur_bs = batch["window"].shape[0]
 
     def __next__(self):
         """ """
@@ -174,27 +239,7 @@ class PredictionDataset(torch.utils.data.IterableDataset):
             if self._debug:
                 _tf = perf_counter()
                 print(f"Batch replenish: {_tf-_t0}")
-        cur = (
-                (
-                    self._cur_sample[0][0][self._cur_ix],
-                    self._cur_sample[0][1][self._cur_ix],
-                    self._cur_sample[0][2][self._cur_ix],
-                    tuple(v[self._cur_ix] for v in self._cur_sample[0][3]),
-                    self._cur_sample[0][4][self._cur_ix],
-                    ),
-                (
-                    self._cur_sample[1][0][self._cur_ix],
-                    ),
-                (
-                    self._cur_sample[2][0][self._cur_ix],
-                    self._cur_sample[2][1][self._cur_ix],
-                    self._cur_sample[2][2][self._cur_ix],
-                    ),
-                (
-                    self._cur_sample[3][0][self._cur_ix],
-
-                    ),
-                )
+        cur = take_index_from_nested(self._cur_sample, self._cur_ix, axis=0)
         self._cur_ix += 1
         return cur
 
@@ -217,11 +262,29 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             chunk_pool_count=4, buf_size_mb=1024, buf_slots=128, buf_policy=0,
             out_dtype="f4", debug=False):
         """
+        The initializer method is responsible for:
+
+        1. open pointers to timegrid datasets
+        2. make a list of all chunks in the file, and determine which of them
+           cross over into an adjacent timegrid. Ignore file-spanning chunks
+           if the needed file isn't provided, or not sampling across files.
+        3. shuffle chunks within each file and randomly drop a fraction of
+           them if sample\_cutoff is provided.
+        4. globally shuffle all chunks across files
+        5. If requested, calculate random temporal offsets for each pixel
+        6. group the chunks into pools that will be extracted, shuffled,
+           and returned together during sample generation.
+        7. get info needed to extract stored and derived features, and
+           identify differentiated features in the window, horizon, target,
+           or auxiliary dynamic outputs
+        8. organize normalization coefficients into vectors.
+
 
          o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o  o
            | |-1--2--3--4--5--6--7--8--9||1--2--3--4--5--6--7--8--9|
             |              |                          |
           buffer         window                     horizon
+
 
         :@param timegrids: Timegrid files, MUST be ordered chronologically so
             that contiguous samples can be collected across files.
@@ -458,11 +521,33 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             print(f"Total chunks over {len(self._tgs.keys())} timegrids:",
                     len(self._chunks))
 
+        ## probably no need to clutter up the namespace. just use the signature
+        '''
         for k,v in self.signature.items():
             if k in dir(self):
                 print(f"DUPLICATE PARAM: {k}. Not setting.")
             else:
                 setattr(self, k, v)
+        '''
+
+    @property
+    def feats(self):
+        """
+        Return a dict mapping array names to their feature labels, which is
+        organized in the same way as the returned data.
+        """
+        return {
+            "window":self._w_feats,
+            "horizon":self._h_feats,
+            "static":self._s_feats
+            "static-int":self._si_feats,
+            "target-init":[f.split(" ")[-1] for f in self._y_feats],
+            "target":self._y_feats,
+            "auxd-h":self._ad_feats,
+            "auxd-w":self._ad_feats,
+            "auxs":self._as_feats,
+            "time":["epoch"],
+            }
 
     @property
     def signature(self):
@@ -603,6 +688,8 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             tmp_ad[1:,:,ix_fl] = np.diff(tmp_ad[...,ix_fl], axis=0)
         tmp_ad = tmp_ad[:,1:] ## don't normalize auxiliary data
         tmp_ad = tmp_ad.astype(self._out_dtype)
+        tmp_adw = tmp_ad[:,:self._w_size]
+        tmp_adh = tmp_ad[:,-self._h_size-1:]
 
         ## extract float-style static data for each sample
         tmp_s = np.stack([
@@ -643,12 +730,25 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             self._rng.shuffle(sixs)
 
         ## format the outputs as a tuple (inputs, outputs, auxiliary_
-        tmp_si = tuple(v[sixs] for v in tmp_si)
+        '''
         self._cur_samples = (
                 (tmp_w[sixs],tmp_h[sixs],tmp_s[sixs],tmp_si,tmp_init[sixs]),
                 (tmp_y[sixs],), ## outputs
                 (tmp_ad[sixs], tmp_as[sixs], tsamples[sixs]) ## auxiliary
                 )
+        '''
+        self._cur_samples = {
+            "window":tmp_w[sixs],
+            "horizon":tmp_h[sixs],
+            "static":tmp_s[sixs],
+            "static-int":tuple(v[sixs] for v in tmp_si),
+            "target-init":tmp_init[sixs],
+            "target":tmp_y[sixs],
+            "auxd-h":tmp_adh[sixs],
+            "auxd-w":tmp_adw[sixs],
+            "auxs":tmp_as[sixs],
+            "time":tsamples[sixs],
+            }
         ## finish time
         if self._debug:
             rcp_ftime = perf_counter()
@@ -697,25 +797,8 @@ class SparseTimegridSampleDataset(torch.utils.data.IterableDataset):
             if len(self._pool_slices) == 0:
                 raise StopIteration(f"No More Chunks Available")
             self._replenish_chunk_pool(self._pool_slices.pop(0))
-        ## ugly but the static int embeddings cant be stacked so whatev
-        cur_sample = (
-                (
-                    self._cur_samples[0][0][self._cur_sample_ix],
-                    self._cur_samples[0][1][self._cur_sample_ix],
-                    self._cur_samples[0][2][self._cur_sample_ix],
-                    tuple(v[self._cur_sample_ix]
-                        for v in self._cur_samples[0][3]),
-                    self._cur_samples[0][4][self._cur_sample_ix],
-                    ),
-                (
-                    self._cur_samples[1][0][self._cur_sample_ix],
-                    ),
-                (
-                    self._cur_samples[2][0][self._cur_sample_ix],
-                    self._cur_samples[2][1][self._cur_sample_ix],
-                    self._cur_samples[2][2][self._cur_sample_ix],
-                    ),
-                )
+        cur_sample = take_index_from_nested(
+                self._cur_samples, self._cur_sample_ix, axis=0)
         self._cur_sample_ix += 1
         return cur_sample
 

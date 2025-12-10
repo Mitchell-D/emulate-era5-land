@@ -223,21 +223,30 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
         for bix in range(config["setup"]["batches_per_epoch"]):
             ## draw a batch from the training data loader
             try:
-                xt,yt,at = move_to_device(next(dl_train_iter), device)
+                #xt,yt,at = move_to_device(next(dl_train_iter), device)
+                tout = move_to_device(next(dl_train_iter), device)
             except StopIteration:
                 if debug:
                     print(f"Re-initializing training generator!")
                 dl_train_iter = iter(dl_train)
-                xt,yt,at = move_to_device(next(dl_train_iter), device)
-            wt,ht,st,sit,initt = xt
-            yt, = yt
+                #xt,yt,at = move_to_device(next(dl_train_iter), device)
+                tout = move_to_device(next(dl_train_iter), device)
+            #wt,ht,st,sit,initt = xt
+            #yt, = yt
 
             ## run the model
-            pt = model(wt, ht, st, sit, yt, device=device)
+            pt = model(
+                    tout["window"],
+                    tout["horizon"],
+                    tout["static"],
+                    tout["static-int"],
+                    tout["target"],
+                    device=device
+                    )
 
             ## evaluate the metrics
             for mk,metric in metrics.items():
-                tmpm = metric(pt,yt)
+                tmpm = metric(pt,tout["target"])
                 if mk==lm:
                     optimizer.zero_grad()
                     ## calculate gradients wrt parameter tensors
@@ -249,10 +258,10 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
                 metrics_batch["train"][mk][-1].append(tmpm_np)
 
             ## update the sample tracking evaluator
-            a_d,a_s,t = at
+            #a_d,a_s,t = at
             ess_t.add_batch({
-                "aux-static":a_s.cpu().detach().numpy(),
-                "time":t.cpu().detach().numpy(),
+                "aux-static":tout["auxs"].cpu().detach().numpy(),
+                "time":tout["time"].cpu().detach().numpy(),
                 })
 
         ## Aggregate batch-wise metrics for simpler epoch-wise stats
@@ -288,26 +297,35 @@ def train_single(config:dict, model_parent_dir:Path, device=None, debug=False):
             with torch.no_grad():
                 for bix in range(config["setup"]["batches_per_epoch"]):
                     try:
-                        xv,yv,av = move_to_device(next(dl_val_iter), device)
+                        #xv,yv,av = move_to_device(next(dl_val_iter), device)
+                        vout = move_to_device(next(dl_val_iter), device)
                     except StopIteration:
                         if debug:
                             print(f"Re-initializing validation generator!")
                         dl_val_iter = iter(dl_val)
-                        xv,yv,av = move_to_device(next(dl_val_iter), device)
-                    wv,hv,sv,siv,initv = xv
-                    yv, = yv
-                    pv = model(wv, hv, sv, siv, yv, device=device)
+                        #xv,yv,av = move_to_device(next(dl_val_iter), device)
+                        vout = move_to_device(next(dl_val_iter), device)
+                    #wv,hv,sv,siv,initv = xv
+                    #yv, = yv
+                    pv = model(
+                            vout["window"],
+                            vout["horizon"],
+                            vout["static"],
+                            vout["static-int"],
+                            vout["target"],
+                            device=device
+                            )
 
                     for mk,metric in metrics.items():
-                        tmpm = metric(pv,yv)
+                        tmpm = metric(pv,vout["target"])
                         tmpm_np = tmpm.cpu().detach().numpy()
                         metrics_batch["val"][mk][-1].append(tmpm_np)
 
                     ## update the sample tracking evaluator
-                    a_d,a_s,t = av
+                    #a_d,a_s,t = av
                     ess_v.add_batch({
-                        "aux-static":a_s.cpu().detach().numpy(),
-                        "time":t.cpu().detach().numpy()
+                        "aux-static":vout["auxs"].cpu().detach().numpy(),
+                        "time":vout["time"].cpu().detach().numpy()
                         })
 
                 ## Aggregate batch-wise metrics for simpler epoch-wise stats
